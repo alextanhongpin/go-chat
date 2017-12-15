@@ -69,6 +69,11 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 				break
 			}
 			log.Println("got message:", msg)
+
+			// switch msg.Type {
+			// case  "authenticate":
+			// 	// jwt authenticate
+			// }
 		default:
 			log.Println("Unknown message")
 		}
