@@ -2,6 +2,7 @@ package chat
 
 import "log"
 
+// Room holds the clients in a particular room
 type Room struct {
 	// Registered clients
 	Clients map[string]map[*Client]bool
@@ -16,6 +17,7 @@ type Room struct {
 	Unregister chan *Subscription
 }
 
+// NewRoom returns a reference to a room
 func NewRoom() *Room {
 	return &Room{
 		Broadcast:  make(chan Message),
@@ -25,53 +27,54 @@ func NewRoom() *Room {
 	}
 }
 
+// Join adds a new client to a room
+func (r *Room) Join(room string, client *Client) {
+	clients := r.Clients[room]
+	if clients == nil {
+		clients := make(map[*Client]bool)
+		r.Clients[room] = clients
+	}
+	r.Clients[room][client] = true
+}
+
+// Quit removes a client from a room
+func (r *Room) Quit(room string, client *Client) {
+	clients := r.Clients[room]
+	if clients != nil {
+		if _, ok := clients[client]; ok {
+			delete(clients, client)
+			close(client.Send)
+			if len(clients) == 0 {
+				delete(r.Clients, room)
+			}
+		}
+	}
+}
+
+// Emit will broadcast the message to a room
+func (r *Room) Emit(room string, msg Message) {
+	clients := r.Clients[room]
+
+	for c := range clients {
+		select {
+		case c.Send <- msg:
+		default:
+			r.Quit(room, c)
+		}
+	}
+}
+
+// Run will initialize the room and the corresponding channels
 func (r *Room) Run() {
 	for {
 		select {
 		case s := <-r.Register:
-			connections := r.Clients[s.Room]
-			if connections == nil {
-				connections = make(map[*Client]bool)
-				r.Clients[s.Room] = connections
-			}
-			r.Clients[s.Room][s.Client] = true
-
+			r.Join(s.Room, s.Client)
 		case s := <-r.Unregister:
-			connections := r.Clients[s.Room]
-			if connections != nil {
-				if _, ok := connections[s.Client]; ok {
-					delete(connections, s.Client)
-					close(s.Client.Send)
-					if len(connections) == 0 {
-						delete(r.Clients, s.Room)
-					}
-				}
-			}
-
+			r.Quit(s.Room, s.Client)
 		case m := <-r.Broadcast:
 			log.Printf("len of clients: %d\n room: %s", len(r.Clients), m.Room)
-			connections := r.Clients[m.Room]
-			log.Println("number of connections in room:", len(connections))
-			for c := range connections {
-				select {
-				case c.Send <- m:
-				default:
-					close(c.Send)
-					delete(connections, c)
-					if len(connections) == 0 {
-						delete(r.Clients, m.Room)
-					}
-				}
-			}
-			// for client := range r.Clients {
-			// 	log.Println("message to broadcast:", message)
-			// 	select {
-			// 	case client.Send <- message:
-			// 	default:
-			// 		close(client.Send)
-			// 		delete(r.Clients, client)
-			// 	}
-			// }
+			r.Emit(m.Room, m)
 		}
 	}
 }

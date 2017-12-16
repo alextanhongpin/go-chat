@@ -13,12 +13,18 @@ type Subscription struct {
 	Room   string
 }
 
+// Close will terminate the client websocket connection
+func (s *Subscription) Close() {
+	s.Client.Conn.Close()
+}
+
+// Read will proceed to read the messages published by the client
 func (s *Subscription) Read() {
 	c := s.Client
 	// Terminate the connection when the server stops
 	defer func() {
-		c.Room.Unregister <- s
-		c.Conn.Close()
+		c.Unsubscribe(s)
+		s.Close()
 	}()
 
 	// Limit the maximum size allowed by the peer
@@ -34,11 +40,12 @@ func (s *Subscription) Read() {
 	}
 }
 
+// Write will write new messages to the client
 func (s *Subscription) Write() {
 	c := s.Client
 	// Remember to close the connection once there is no more writes
 	defer func() {
-		c.Conn.Close()
+		s.Close()
 	}()
 
 	for {
@@ -53,5 +60,13 @@ func (s *Subscription) Write() {
 			// Write json data
 			c.Conn.WriteJSON(message)
 		}
+	}
+}
+
+// NewSubscription will return a new pointer to the subscription
+func NewSubscription(room string, client *Client) *Subscription {
+	return &Subscription{
+		Client: client,
+		Room:   room,
 	}
 }
