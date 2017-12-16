@@ -18,6 +18,8 @@ var (
 
 const port = ":8080"
 
+var room *chat.Room
+
 func main() {
 	mux := http.NewServeMux()
 	mux.Handle("/", http.FileServer(http.Dir("./public")))
@@ -41,8 +43,10 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	room := chat.NewRoom()
-	go room.Run()
+	if room == nil {
+		room = chat.NewRoom()
+		go room.Run()
+	}
 
 	client := chat.NewClient(ws, room)
 	subscription := chat.NewSubscription(query.Get("room"), client)

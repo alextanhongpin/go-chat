@@ -85,29 +85,38 @@ class Controller {
   }
 
   onSubmitMessage (evt) {
+    const model = this.model
     this.publish({
-      handle: 'hello',
-      text: this.model.get('message'),
-      room: 'car'
+      handle: model.get('username'),
+      text: model.get('message'),
+      room: model.get('room')
     })
+    evt.currentTarget.value = ''
   }
 }
 
 (function () {
-  const socket = new window.WebSocket('ws://localhost:8080/ws?room=car')
+  const room = window.prompt('What room do you want to join?')
+  const username = window.prompt('What is your username?')
+  console.log(`hello, ${username}!`)
+
+  const socket = new window.WebSocket(`ws://localhost:8080/ws?room=${room}`)
 
   socket.onopen = onOpen(socket)
   socket.onmessage = onMessage(socket)
 
   const view = new View()
   const model = new Model()
+  model.set('room', room)
+  model.set('username', username)
+
   const controller = new Controller({ model, view, publish: publish(socket) })
   controller.bindEvents()
 
-  const bus = new EventBus()
-  bus.on('hello', ({ name }) => {
-    console.log(`greetings, ${name}!`)
-  })
+  // const bus = new EventBus()
+  // bus.on('hello', ({ name }) => {
+  //   console.log(`greetings, ${name}!`)
+  // })
 
-  bus.trigger('hello', { name: 'john' })
+  // bus.trigger('hello', { name: 'john' })
 })()

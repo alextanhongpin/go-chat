@@ -53,7 +53,9 @@ func (r *Room) Quit(room string, client *Client) {
 
 // Emit will broadcast the message to a room
 func (r *Room) Emit(room string, msg Message) {
+	log.Printf("sending message \"%s\" to room %s from %s\n", msg.Text, msg.Room, msg.Handle)
 	clients := r.Clients[room]
+	log.Printf("number of clients in room %s: %d", msg.Room, len(clients))
 
 	for c := range clients {
 		select {
