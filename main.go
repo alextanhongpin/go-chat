@@ -7,7 +7,7 @@ import (
 	"github.com/alextanhongpin/go-chat/chat"
 )
 
-const port = ":8080"
+const port = ":3000"
 
 func main() {
 	mux := http.NewServeMux()

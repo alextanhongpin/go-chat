@@ -100,7 +100,7 @@ class Controller {
   const username = window.prompt('What is your username?')
   console.log(`hello, ${username}!`)
 
-  const socket = new window.WebSocket(`ws://localhost:8080/ws?room=${room}`)
+  const socket = new window.WebSocket(`ws://localhost:3000/ws?room=${room}`)
 
   socket.onopen = onOpen(socket)
   socket.onmessage = onMessage(socket)
