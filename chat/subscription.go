@@ -38,7 +38,11 @@ func (s *Subscription) Read(pubsub *PubSub) {
 		log.Println("got message:", msg)
 		// TODO: publish it to redis here
 		// c.Broadcast(msg)
-		pubsub.Publish(s.Room, msg)
+		err := pubsub.Publish(s.Room, msg)
+		if err != nil {
+			// TODO: Handle error correctly
+			break
+		}
 		// pubsub.Do("PUBLISH", s.Room, string(msg))
 	}
 }
