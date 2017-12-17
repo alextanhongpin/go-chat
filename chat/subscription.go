@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"context"
 	"log"
 	"time"
 
@@ -19,59 +20,68 @@ func (s *Subscription) Close() {
 }
 
 // Read will proceed to read the messages published by the client
-func (s *Subscription) Read(pubsub *PubSub) {
+func (s *Subscription) Read(ctx context.Context, pubsub *PubSub) {
 	c := s.Client
 	// Terminate the connection when the server stops
-	defer func() {
-		c.Unsubscribe(s)
-		s.Close()
-	}()
 
 	// Limit the maximum size allowed by the peer
 	c.Conn.SetReadLimit(maxMessageSize)
 	for {
+		// defer func() {
+
+		// }()
 		var msg Message
 		if err := c.Conn.ReadJSON(&msg); err != nil {
-			log.Println("websocket closed:", err)
+			log.Println("subscription error: websocket closed due to", err)
 			break
 		}
 		log.Println("got message:", msg)
 		// TODO: publish it to redis here
 		// c.Broadcast(msg)
-		err := pubsub.Publish(s.Room, msg)
-		if err != nil {
-			// TODO: Handle error correctly
+		if err := pubsub.Publish(s.Room, msg); err != nil {
+			log.Println("error publishing:", err.Error())
 			break
 		}
-		// pubsub.Do("PUBLISH", s.Room, string(msg))
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
 	}
+	c.Unsubscribe(s)
+	s.Close()
 }
 
+// Broadcast will send the message to the subscribed clients
 func (s *Subscription) Broadcast(msg Message) {
 	s.Client.Broadcast(msg)
 }
 
 // Write will write new messages to the client
-func (s *Subscription) Write() {
+func (s *Subscription) Write(ctx context.Context) {
 	c := s.Client
 	// Remember to close the connection once there is no more writes
-	defer func() {
-		s.Close()
-	}()
+	// defer s.Close()
 
 	for {
 		select {
 		case message, ok := <-c.Send:
 			c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if !ok {
+				log.Println("closing subscription channel")
 				// The Room closed the channel
 				c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
 			// Write json data
 			c.Conn.WriteJSON(message)
+		case <-ctx.Done():
+			return
+			// default:
 		}
 	}
+
+	// s.Close()
 }
 
 // NewSubscription will return a new pointer to the subscription

@@ -8,7 +8,7 @@ function onOpen (socket) {
     const msg = {
       handle: 'hello socket',
       text: 'this is a new text message',
-      room: 'car'
+      room: 'tech'
     }
     socket.send(JSON.stringify(msg))
   }

@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"context"
 	"log"
 )
 
@@ -17,19 +18,15 @@ type Room struct {
 
 	// Unrequest requests from the clients
 	Unsubscribe chan *Subscription
-
-	// Redis pub/sub connection
-	PubSub *PubSub
 }
 
 // NewRoom returns a reference to a room
-func NewRoom(port string) *Room {
+func NewRoom() *Room {
 	return &Room{
 		Broadcast:   make(chan Message),
 		Subscribe:   make(chan *Subscription),
 		Unsubscribe: make(chan *Subscription),
 		Clients:     make(map[string]map[*Client]bool),
-		PubSub:      NewPubSub(port),
 	}
 }
 
@@ -58,22 +55,28 @@ func (r *Room) Quit(room string, client *Client) {
 }
 
 // Emit will broadcast the message to a room
-func (r *Room) Emit(room string, msg Message) {
+func (r *Room) Emit(ctx context.Context, room string, msg Message) {
 	log.Printf("sending message \"%s\" to room %s from %s\n", msg.Text, msg.Room, msg.Handle)
 	clients := r.Clients[room]
-	log.Printf("number of clients in room %s: %d", msg.Room, len(clients))
+	log.Printf("number of clients in room %s: %d %s", msg.Room, len(clients), room)
+	log.Printf("got %#v", msg)
 
 	for c := range clients {
 		select {
 		case c.Send <- msg:
+			log.Println("send msg:", msg)
+		case <-ctx.Done():
+			r.Quit(room, c)
+			return
 		default:
+			log.Println("quitting room...")
 			r.Quit(room, c)
 		}
 	}
 }
 
 // Run will initialize the room and the corresponding channels
-func (r *Room) Run() {
+func (r *Room) Run(ctx context.Context) {
 	for {
 		select {
 		case s := <-r.Subscribe:
@@ -81,7 +84,9 @@ func (r *Room) Run() {
 		case s := <-r.Unsubscribe:
 			r.Quit(s.Room, s.Client)
 		case m := <-r.Broadcast:
-			r.Emit(m.Room, m)
+			r.Emit(ctx, m.Room, m)
+		case <-ctx.Done():
+			return
 		}
 	}
 }

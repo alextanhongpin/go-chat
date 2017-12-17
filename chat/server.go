@@ -1,7 +1,7 @@
 package chat
 
 import (
-	"log"
+	"context"
 	"net/http"
 
 	"github.com/gorilla/websocket"
@@ -17,19 +17,33 @@ var (
 	}
 )
 
-// Server returns a new chat server
-func Server(redisPort string) http.HandlerFunc {
+// Server represents the chat server
+type Server struct {
+	Room   *Room
+	PubSub *PubSub
+}
 
-	room := NewRoom(redisPort)
-	go room.Run()
+// Run starts the server
+func (s *Server) Run(ctx context.Context) {
+	s.Room.Run(ctx)
+}
 
+// ServeWS returns a handler function for the websocket connection
+func (s *Server) ServeWS() http.HandlerFunc {
+	// room := NewRoom()
+	// go room.Run(context.Background())
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		query := r.URL.Query()
-		log.Println("you are in room:", query.Get("room"))
+		room := s.Room
+
+		ctx, cancel := context.WithCancel(r.Context())
+		defer cancel()
+
 		if r.Method != "GET" {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		query := r.URL.Query()
+		roomID := query.Get("room")
 
 		ws, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
@@ -38,13 +52,23 @@ func Server(redisPort string) http.HandlerFunc {
 		}
 
 		client := NewClient(ws, room)
-		subscription := NewSubscription(query.Get("room"), client)
+		// defer client.Conn.Close()
+		subscription := NewSubscription(roomID, client)
+
 		client.Subscribe(subscription)
 
-		go subscription.Read(room.PubSub)
-		go subscription.Write()
+		go subscription.Read(ctx, s.PubSub)
+		go subscription.Write(ctx)
 
 		// Create a new client here / subscribe to a new redis channel here
-		room.PubSub.Subscribe(query.Get("room"), subscription)
+		s.PubSub.Subscribe(ctx, roomID, subscription)
 	})
+}
+
+// NewServer returns a pointer to the server
+func NewServer(port string) *Server {
+	return &Server{
+		Room:   NewRoom(),
+		PubSub: NewPubSub(port),
+	}
 }
