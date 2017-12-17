@@ -19,7 +19,7 @@ func (s *Subscription) Close() {
 }
 
 // Read will proceed to read the messages published by the client
-func (s *Subscription) Read() {
+func (s *Subscription) Read(pubsub *PubSub) {
 	c := s.Client
 	// Terminate the connection when the server stops
 	defer func() {
@@ -37,8 +37,14 @@ func (s *Subscription) Read() {
 		}
 		log.Println("got message:", msg)
 		// TODO: publish it to redis here
-		c.Broadcast(msg)
+		// c.Broadcast(msg)
+		pubsub.Publish(s.Room, msg)
+		// pubsub.Do("PUBLISH", s.Room, string(msg))
 	}
+}
+
+func (s *Subscription) Broadcast(msg Message) {
+	s.Client.Broadcast(msg)
 }
 
 // Write will write new messages to the client

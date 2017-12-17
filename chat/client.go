@@ -36,6 +36,7 @@ func (c *Client) Unsubscribe(s *Subscription) {
 	c.Room.Unsubscribe <- s
 }
 
+// Broadcast sends a message to the room
 func (c *Client) Broadcast(m Message) {
 	c.Room.Broadcast <- m
 }

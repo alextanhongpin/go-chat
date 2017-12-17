@@ -18,16 +18,16 @@ var (
 )
 
 // Server returns a new chat server
-func Server() http.HandlerFunc {
+func Server(redisPort string) http.HandlerFunc {
 
-	room := NewRoom()
+	room := NewRoom(redisPort)
 	go room.Run()
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		query := r.URL.Query()
 		log.Println("you are in room:", query.Get("room"))
 		if r.Method != "GET" {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
@@ -41,7 +41,10 @@ func Server() http.HandlerFunc {
 		subscription := NewSubscription(query.Get("room"), client)
 		client.Subscribe(subscription)
 
-		go subscription.Read()
-		// subscription.Write()
+		go subscription.Read(room.PubSub)
+		go subscription.Write()
+
+		// Create a new client here / subscribe to a new redis channel here
+		room.PubSub.Subscribe(query.Get("room"), subscription)
 	})
 }

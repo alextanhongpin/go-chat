@@ -1,6 +1,8 @@
 package chat
 
-import "log"
+import (
+	"log"
+)
 
 // Room holds the clients in a particular room
 type Room struct {
@@ -15,15 +17,19 @@ type Room struct {
 
 	// Unrequest requests from the clients
 	Unsubscribe chan *Subscription
+
+	// Redis pub/sub connection
+	PubSub *PubSub
 }
 
 // NewRoom returns a reference to a room
-func NewRoom() *Room {
+func NewRoom(port string) *Room {
 	return &Room{
 		Broadcast:   make(chan Message),
 		Subscribe:   make(chan *Subscription),
 		Unsubscribe: make(chan *Subscription),
 		Clients:     make(map[string]map[*Client]bool),
+		PubSub:      NewPubSub(port),
 	}
 }
 
