@@ -42,6 +42,6 @@ func Server() http.HandlerFunc {
 		client.Subscribe(subscription)
 
 		go subscription.Read()
-		go subscription.Write()
+		// subscription.Write()
 	})
 }

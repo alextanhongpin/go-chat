@@ -28,12 +28,16 @@ type Client struct {
 
 // Subscribe adds a subscription to the room
 func (c *Client) Subscribe(s *Subscription) {
-	c.Room.Register <- s
+	c.Room.Subscribe <- s
 }
 
 // Unsubscribe removes a subscription from a room
 func (c *Client) Unsubscribe(s *Subscription) {
-	c.Room.Unregister <- s
+	c.Room.Unsubscribe <- s
+}
+
+func (c *Client) Broadcast(m Message) {
+	c.Room.Broadcast <- m
 }
 
 // NewClient returns a new chat server

@@ -36,7 +36,8 @@ func (s *Subscription) Read() {
 			break
 		}
 		log.Println("got message:", msg)
-		c.Room.Broadcast <- msg
+		// TODO: publish it to redis here
+		c.Broadcast(msg)
 	}
 }
 

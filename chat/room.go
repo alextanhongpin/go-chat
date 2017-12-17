@@ -11,19 +11,19 @@ type Room struct {
 	Broadcast chan Message
 
 	// Register requests from the clients
-	Register chan *Subscription
+	Subscribe chan *Subscription
 
 	// Unrequest requests from the clients
-	Unregister chan *Subscription
+	Unsubscribe chan *Subscription
 }
 
 // NewRoom returns a reference to a room
 func NewRoom() *Room {
 	return &Room{
-		Broadcast:  make(chan Message),
-		Register:   make(chan *Subscription),
-		Unregister: make(chan *Subscription),
-		Clients:    make(map[string]map[*Client]bool),
+		Broadcast:   make(chan Message),
+		Subscribe:   make(chan *Subscription),
+		Unsubscribe: make(chan *Subscription),
+		Clients:     make(map[string]map[*Client]bool),
 	}
 }
 
@@ -70,12 +70,11 @@ func (r *Room) Emit(room string, msg Message) {
 func (r *Room) Run() {
 	for {
 		select {
-		case s := <-r.Register:
+		case s := <-r.Subscribe:
 			r.Join(s.Room, s.Client)
-		case s := <-r.Unregister:
+		case s := <-r.Unsubscribe:
 			r.Quit(s.Room, s.Client)
 		case m := <-r.Broadcast:
-			log.Printf("len of clients: %d\n room: %s", len(r.Clients), m.Room)
 			r.Emit(m.Room, m)
 		}
 	}
