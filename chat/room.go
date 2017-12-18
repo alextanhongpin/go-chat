@@ -1,7 +1,6 @@
 package chat
 
 import (
-	"context"
 	"log"
 )
 
@@ -55,28 +54,22 @@ func (r *Room) Quit(room string, client *Client) {
 }
 
 // Emit will broadcast the message to a room
-func (r *Room) Emit(ctx context.Context, room string, msg Message) {
-	log.Printf("sending message \"%s\" to room %s from %s\n", msg.Text, msg.Room, msg.Handle)
-	clients := r.Clients[room]
-	log.Printf("number of clients in room %s: %d %s", msg.Room, len(clients), room)
-	log.Printf("got %#v", msg)
+func (r *Room) Emit(msg Message) {
+	log.Printf("room.Emit \"%s\" to room \"%s\" from \"%s\"\n", msg.Text, msg.Room, msg.Handle)
+	clients := r.Clients[msg.Room]
 
 	for c := range clients {
 		select {
 		case c.Send <- msg:
 			log.Println("send msg:", msg)
-		case <-ctx.Done():
-			r.Quit(room, c)
-			return
 		default:
-			log.Println("quitting room...")
-			r.Quit(room, c)
+			r.Quit(msg.Room, c)
 		}
 	}
 }
 
 // Run will initialize the room and the corresponding channels
-func (r *Room) Run(ctx context.Context) {
+func (r *Room) Run() {
 	for {
 		select {
 		case s := <-r.Subscribe:
@@ -84,9 +77,8 @@ func (r *Room) Run(ctx context.Context) {
 		case s := <-r.Unsubscribe:
 			r.Quit(s.Room, s.Client)
 		case m := <-r.Broadcast:
-			r.Emit(ctx, m.Room, m)
-		case <-ctx.Done():
-			return
+			r.Emit(m)
+		default:
 		}
 	}
 }

@@ -1,7 +1,7 @@
 package chat
 
 import (
-	"context"
+	"log"
 	"net/http"
 
 	"github.com/gorilla/websocket"
@@ -24,24 +24,22 @@ type Server struct {
 }
 
 // Run starts the server
-func (s *Server) Run(ctx context.Context) {
-	s.Room.Run(ctx)
+func (s *Server) Run() {
+	go s.Room.Run()
+	go s.PubSub.Subscribe(s.Room)
 }
 
 // ServeWS returns a handler function for the websocket connection
 func (s *Server) ServeWS() http.HandlerFunc {
-	// room := NewRoom()
-	// go room.Run(context.Background())
+	log.Println("serving websocket")
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		room := s.Room
-
-		ctx, cancel := context.WithCancel(r.Context())
-		defer cancel()
 
 		if r.Method != "GET" {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+
 		query := r.URL.Query()
 		roomID := query.Get("room")
 
@@ -51,24 +49,19 @@ func (s *Server) ServeWS() http.HandlerFunc {
 			return
 		}
 
-		client := NewClient(ws, room)
-		// defer client.Conn.Close()
+		client := NewClient(ws)
 		subscription := NewSubscription(roomID, client)
+		room.Subscribe <- subscription
 
-		client.Subscribe(subscription)
-
-		go subscription.Read(ctx, s.PubSub)
-		go subscription.Write(ctx)
-
-		// Create a new client here / subscribe to a new redis channel here
-		s.PubSub.Subscribe(ctx, roomID, subscription)
+		go subscription.Read(s.PubSub, room)
+		subscription.Write()
 	})
 }
 
 // NewServer returns a pointer to the server
-func NewServer(port string) *Server {
+func NewServer(port, channel string) *Server {
 	return &Server{
 		Room:   NewRoom(),
-		PubSub: NewPubSub(port),
+		PubSub: NewPubSub(port, channel),
 	}
 }

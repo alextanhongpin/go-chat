@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -11,15 +10,17 @@ import (
 	"github.com/alextanhongpin/go-chat/chat"
 )
 
-const port = ":3000"
-const redisPort = ":6379"
+const (
+	port         = ":4000"
+	redisPort    = ":6379"
+	redisChannel = "chat"
+)
 
 func main() {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
-	cs := chat.NewServer(":6379")
-	go cs.Run(ctx)
+	cs := chat.NewServer(redisPort, redisChannel)
+
+	go cs.Run()
 
 	mux := http.NewServeMux()
 	mux.Handle("/", http.FileServer(http.Dir("./public")))
@@ -27,6 +28,7 @@ func main() {
 
 	// mux.HandleFunc("/auth", handleAuth)
 	go checkGoroutine()
+
 	log.Printf("listening to port *%s. press ctrl + c to cancel.\n", port)
 	log.Fatal(http.ListenAndServe(port, mux))
 }
