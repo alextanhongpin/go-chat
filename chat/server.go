@@ -24,8 +24,12 @@ type Server struct {
 
 // Run starts the server
 func (s *Server) Run() {
-	go s.Room.Run()
-	go s.PubSub.Subscribe(s.Room)
+	s.Room.Run()
+}
+
+// Subscribe to the room
+func (s *Server) Subscribe() {
+	s.PubSub.Subscribe(s.Room)
 }
 
 // ServeWS returns a handler function for the websocket connection

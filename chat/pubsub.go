@@ -39,6 +39,8 @@ func (ps *PubSub) Publish(msg Message) error {
 		return errors.Wrap(err, "unable to flush published message to Redis")
 	}
 
+	// LPUSH and LTRIM, LRANGE 0 10
+
 	return nil
 }
 

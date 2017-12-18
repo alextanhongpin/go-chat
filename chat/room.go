@@ -26,24 +26,24 @@ func NewRoom() *Room {
 }
 
 // Join adds a new client to a room
-func (r *Room) Join(room string, client *Client) {
-	clients := r.Clients[room]
+func (r *Room) Join(s *Subscription) {
+	clients := r.Clients[s.Room]
 	if clients == nil {
 		clients := make(map[*Client]bool)
-		r.Clients[room] = clients
+		r.Clients[s.Room] = clients
 	}
-	r.Clients[room][client] = true
+	r.Clients[s.Room][s.Client] = true
 }
 
 // Quit removes a client from a room
-func (r *Room) Quit(room string, client *Client) {
-	clients := r.Clients[room]
+func (r *Room) Quit(s *Subscription) {
+	clients := r.Clients[s.Room]
 	if clients != nil {
-		if _, ok := clients[client]; ok {
-			delete(clients, client)
-			close(client.Send)
+		if _, ok := clients[s.Client]; ok {
+			delete(clients, s.Client)
+			close(s.Client.Send)
 			if len(clients) == 0 {
-				delete(r.Clients, room)
+				delete(r.Clients, s.Room)
 			}
 		}
 	}
@@ -57,7 +57,7 @@ func (r *Room) Emit(msg Message) {
 		select {
 		case c.Send <- msg:
 		default:
-			r.Quit(msg.Room, c)
+			r.Quit(&Subscription{Client: c, Room: msg.Room})
 		}
 	}
 }
@@ -67,9 +67,9 @@ func (r *Room) Run() {
 	for {
 		select {
 		case s := <-r.Subscribe:
-			r.Join(s.Room, s.Client)
+			r.Join(s)
 		case s := <-r.Unsubscribe:
-			r.Quit(s.Room, s.Client)
+			r.Quit(s)
 		case m := <-r.Broadcast:
 			r.Emit(m)
 		default:

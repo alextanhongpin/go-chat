@@ -21,12 +21,14 @@ func main() {
 	cs := chat.NewServer(redisPort, redisChannel)
 
 	go cs.Run()
+	go cs.Subscribe()
 
 	mux := http.NewServeMux()
 	mux.Handle("/", http.FileServer(http.Dir("./public")))
 	mux.HandleFunc("/ws", cs.ServeWS())
 
 	// mux.HandleFunc("/auth", handleAuth)
+	// mux.HandleFunc("/chat-histories", handleHistory)
 	go checkGoroutine()
 
 	log.Printf("listening to port *%s. press ctrl + c to cancel.\n", port)
