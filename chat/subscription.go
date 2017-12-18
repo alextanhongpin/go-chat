@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/pkg/errors"
 )
 
 // Subscription contains the Client Connection and Room
@@ -20,25 +21,24 @@ func (s *Subscription) Close() {
 
 // Read will proceed to read the messages published by the client
 func (s *Subscription) Read(pubsub *PubSub, room *Room) {
-	log.Println("reading from subscription")
 	c := s.Client
 
 	c.Conn.SetReadLimit(maxMessageSize)
 	for {
 		var msg Message
 		if err := c.Conn.ReadJSON(&msg); err != nil {
-			log.Println("subscription error: websocket closed due to", err)
+			log.Println(errors.Wrap(err, "websocket closed"))
 			break
 		}
 
-		log.Printf("publishing message to %s: %v\n", s.Room, msg)
 		if err := pubsub.Publish(msg); err != nil {
-			log.Println("error publishing:", err.Error())
+			log.Println(errors.Wrap(err, "error publishing"))
 			break
 		}
 	}
 
 	room.Unsubscribe <- s
+
 	s.Close()
 }
 

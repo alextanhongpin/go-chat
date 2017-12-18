@@ -1,7 +1,6 @@
 package chat
 
 import (
-	"log"
 	"net/http"
 
 	"github.com/gorilla/websocket"
@@ -31,7 +30,6 @@ func (s *Server) Run() {
 
 // ServeWS returns a handler function for the websocket connection
 func (s *Server) ServeWS() http.HandlerFunc {
-	log.Println("serving websocket")
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		room := s.Room
 

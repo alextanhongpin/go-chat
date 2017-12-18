@@ -33,33 +33,24 @@ func (ps *PubSub) Publish(msg Message) error {
 
 	// TODO: Make channel a variable
 	if _, err := c.Do("PUBLISH", "chat", string(out)); err != nil {
-		log.Println("error publishing message")
-		return err
+		return errors.Wrap(err, "unable to publish message to Redis")
 	}
 	if err := c.Flush(); err != nil {
-		log.Println("error flusthing")
-		return errors.Wrap(err, "Unable to flush published message to Redis")
+		return errors.Wrap(err, "unable to flush published message to Redis")
 	}
 
 	return nil
 }
 
-// var isSubscribed = false
-
 // Subscribe to a redis channel
 func (ps *PubSub) Subscribe(room *Room) {
 	c := ps.Conn()
 	psc := redis.PubSubConn{Conn: c}
-
-	// if !isSubscribed {
-	log.Println("subscribing to chat")
 	psc.Subscribe("chat")
-	// }
 
 	for c.Err() == nil {
 		switch v := psc.Receive().(type) {
 		case redis.Message:
-			log.Println("got message redis:", v.Channel, string(v.Data))
 			var msg Message
 			if err := json.Unmarshal(v.Data, &msg); err != nil {
 				log.Printf("error unmarshalling redis published data: %s\n", err.Error())
@@ -82,7 +73,6 @@ func NewPool(port, channel string) *redis.Pool {
 		MaxActive: 10,
 		Wait:      true,
 		Dial: func() (redis.Conn, error) {
-			log.Println("creating new redis pool")
 			c, err := redis.Dial("tcp", port)
 			if err != nil {
 				return nil, err

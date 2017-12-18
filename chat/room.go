@@ -1,9 +1,5 @@
 package chat
 
-import (
-	"log"
-)
-
 // Room holds the clients in a particular room
 type Room struct {
 	// Registered clients
@@ -55,13 +51,11 @@ func (r *Room) Quit(room string, client *Client) {
 
 // Emit will broadcast the message to a room
 func (r *Room) Emit(msg Message) {
-	log.Printf("room.Emit \"%s\" to room \"%s\" from \"%s\"\n", msg.Text, msg.Room, msg.Handle)
 	clients := r.Clients[msg.Room]
 
 	for c := range clients {
 		select {
 		case c.Send <- msg:
-			log.Println("send msg:", msg)
 		default:
 			r.Quit(msg.Room, c)
 		}
