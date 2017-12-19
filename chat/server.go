@@ -51,12 +51,11 @@ func (s *Server) ServeWS() http.HandlerFunc {
 			return
 		}
 
-		client := NewClient(ws)
-		subscription := NewSubscription(roomID, client)
-		room.Subscribe <- subscription
+		client := NewClient(ws, roomID)
+		room.Subscribe <- client
 
-		go subscription.Read(s.PubSub, room)
-		subscription.Write()
+		go client.Read(s.PubSub, room)
+		client.Write()
 	})
 }
 

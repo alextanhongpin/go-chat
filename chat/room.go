@@ -9,41 +9,41 @@ type Room struct {
 	Broadcast chan Message
 
 	// Register requests from the clients
-	Subscribe chan *Subscription
+	Subscribe chan *Client
 
 	// Unrequest requests from the clients
-	Unsubscribe chan *Subscription
+	Unsubscribe chan *Client
 }
 
 // NewRoom returns a reference to a room
 func NewRoom() *Room {
 	return &Room{
 		Broadcast:   make(chan Message),
-		Subscribe:   make(chan *Subscription),
-		Unsubscribe: make(chan *Subscription),
+		Subscribe:   make(chan *Client),
+		Unsubscribe: make(chan *Client),
 		Clients:     make(map[string]map[*Client]bool),
 	}
 }
 
 // Join adds a new client to a room
-func (r *Room) Join(s *Subscription) {
-	clients := r.Clients[s.Room]
+func (r *Room) Join(c *Client) {
+	clients := r.Clients[c.Room]
 	if clients == nil {
 		clients := make(map[*Client]bool)
-		r.Clients[s.Room] = clients
+		r.Clients[c.Room] = clients
 	}
-	r.Clients[s.Room][s.Client] = true
+	r.Clients[c.Room][c] = true
 }
 
 // Quit removes a client from a room
-func (r *Room) Quit(s *Subscription) {
-	clients := r.Clients[s.Room]
+func (r *Room) Quit(c *Client) {
+	clients := r.Clients[c.Room]
 	if clients != nil {
-		if _, ok := clients[s.Client]; ok {
-			delete(clients, s.Client)
-			close(s.Client.Send)
+		if _, ok := clients[c]; ok {
+			delete(clients, c)
+			close(c.Send)
 			if len(clients) == 0 {
-				delete(r.Clients, s.Room)
+				delete(r.Clients, c.Room)
 			}
 		}
 	}
@@ -57,7 +57,7 @@ func (r *Room) Emit(msg Message) {
 		select {
 		case c.Send <- msg:
 		default:
-			r.Quit(&Subscription{Client: c, Room: msg.Room})
+			r.Quit(c)
 		}
 	}
 }
