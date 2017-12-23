@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/alextanhongpin/go-chat/chat"
+	"github.com/alextanhongpin/go-chat/ticket"
 )
 
 const (
@@ -27,7 +28,7 @@ func main() {
 	mux.Handle("/", http.FileServer(http.Dir("./public")))
 	mux.HandleFunc("/ws", cs.ServeWS())
 
-	// mux.HandleFunc("/auth", handleAuth)
+	mux.HandleFunc("/auth", handleAuth)
 	// mux.HandleFunc("/chat-histories", handleHistory)
 	go checkGoroutine()
 
@@ -53,6 +54,21 @@ func checkGoroutine() {
 	}()
 }
 
-// func handleAuth(w http.ResponseWriter, r *http.Request) {
-// 	// Create a jwt `ticket` that contains the user scope and id to allow them to connect to the websocket
-// }
+func handleAuth(w http.ResponseWriter, r *http.Request) {
+	// Query user from the database based on the Authorization Bearer Token provided
+	// Use the user_id obtained to create a new "Ticket" for the websocket
+	userID := "abc123"
+
+	// Create new ticket
+	tic := ticket.New(userID, 1*time.Hour)
+
+	// Sign ticket
+	token, err := ticket.Sign(tic)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Return as json response
+	fmt.Fprintf(w, `{"ticket": "%s"}`, token)
+}

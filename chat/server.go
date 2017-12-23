@@ -1,8 +1,10 @@
 package chat
 
 import (
+	"log"
 	"net/http"
 
+	"github.com/alextanhongpin/go-chat/ticket"
 	"github.com/gorilla/websocket"
 )
 
@@ -43,8 +45,15 @@ func (s *Server) ServeWS() http.HandlerFunc {
 		}
 
 		query := r.URL.Query()
-		roomID := query.Get("room")
-
+		token := query.Get("ticket")
+		tic, err := ticket.Verify(token)
+		if err != nil {
+			log.Println("error verifying ticket", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		log.Println("verify ticket:", tic.ID)
+		roomID := tic.ID
 		ws, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)

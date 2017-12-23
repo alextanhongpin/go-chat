@@ -6,9 +6,9 @@ function onOpen (socket) {
     //   payload: { token: 'xxx' }
     // }
     const msg = {
-      handle: 'hello socket',
-      text: 'this is a new text message',
-      room: 'tech'
+      type: 'authenticate',
+      data: 'some token',
+      room: ''
     }
     socket.send(JSON.stringify(msg))
   }
@@ -87,36 +87,41 @@ class Controller {
   onSubmitMessage (evt) {
     const model = this.model
     this.publish({
-      handle: model.get('username'),
-      text: model.get('message'),
+      type: model.get('username'),
+      data: model.get('message'),
       room: model.get('room')
     })
     evt.currentTarget.value = ''
   }
 }
 
-(function () {
-  const room = window.prompt('What room do you want to join?')
-  const username = window.prompt('What is your username?')
-  console.log(`hello, ${username}!`)
+(async function () {
+  try {
+    const body = await window.fetch('/auth', {
+      method: 'POST'
+    })
+    const response = await body.json()
+    if (response) {
+      const { ticket } = response
+      console.log('ticket:', ticket)
 
-  const socket = new window.WebSocket(`ws://localhost:4000/ws?room=${room}`)
+      const username = window.prompt('What is your username?')
+      console.log(`hello, ${username}!`)
 
-  socket.onopen = onOpen(socket)
-  socket.onmessage = onMessage(socket)
+      const socket = new window.WebSocket(`ws://localhost:4000/ws?ticket=${ticket}`)
 
-  const view = new View()
-  const model = new Model()
-  model.set('room', room)
-  model.set('username', username)
+      socket.onopen = onOpen(socket)
+      socket.onmessage = onMessage(socket)
 
-  const controller = new Controller({ model, view, publish: publish(socket) })
-  controller.bindEvents()
+      const view = new View()
+      const model = new Model()
+      model.set('username', username)
+      model.set('room', 'abc123')
 
-  // const bus = new EventBus()
-  // bus.on('hello', ({ name }) => {
-  //   console.log(`greetings, ${name}!`)
-  // })
-
-  // bus.trigger('hello', { name: 'john' })
+      const controller = new Controller({ model, view, publish: publish(socket) })
+      controller.bindEvents()
+    }
+  } catch (error) {
+    console.error(error.message)
+  }
 })()

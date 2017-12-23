@@ -53,6 +53,7 @@ func (r *Room) Quit(c *Client) {
 func (r *Room) Emit(msg Message) {
 	clients := r.Clients[msg.Room]
 
+	// Perform business logic for handling different messages here
 	for c := range clients {
 		select {
 		case c.Send <- msg:
@@ -66,10 +67,10 @@ func (r *Room) Emit(msg Message) {
 func (r *Room) Run() {
 	for {
 		select {
-		case s := <-r.Subscribe:
-			r.Join(s)
-		case s := <-r.Unsubscribe:
-			r.Quit(s)
+		case c := <-r.Subscribe:
+			r.Join(c)
+		case c := <-r.Unsubscribe:
+			r.Quit(c)
 		case m := <-r.Broadcast:
 			r.Emit(m)
 		default:
