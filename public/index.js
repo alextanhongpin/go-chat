@@ -1,16 +1,14 @@
 
-function onOpen (socket) {
+function onOpen (socket, model) {
   return function (event) {
-    // const msg = {
-    //   type: 'authenticate',
-    //   payload: { token: 'xxx' }
-    // }
-    // const msg = {
-    //   type: 'authenticate',
-    //   data: 'some token',
-    //   room: ''
-    // }
-    // socket.send(JSON.stringify(msg))
+    const msg = {
+      type: 'history', // Fetch the last conversations
+      data: '',
+      room: '', // model.get('room'),
+      token: model.get('token')
+    }
+
+    socket.send(JSON.stringify(msg))
   }
 }
 
@@ -89,7 +87,7 @@ class Controller {
     this.publish({
       type: model.get('username'),
       data: model.get('message'),
-      room: model.get('room'),
+      // room: model.get('room'),
       token: model.get('token')
     })
     evt.currentTarget.value = ''
@@ -109,16 +107,16 @@ class Controller {
       const username = window.prompt('What is your username?')
       console.log(`hello, ${username}!`)
 
-      const socket = new window.WebSocket(`ws://localhost:4000/ws?ticket=${ticket}`)
-
-      socket.onopen = onOpen(socket)
-      socket.onmessage = onMessage(socket)
-
       const view = new View()
       const model = new Model()
       model.set('username', username)
-      model.set('room', 'abc123')
+      // model.set('room', 'abc123')
       model.set('token', ticket)
+
+      const socket = new window.WebSocket(`ws://localhost:4000/ws?ticket=${ticket}`)
+
+      socket.onopen = onOpen(socket, model)
+      socket.onmessage = onMessage(socket)
 
       const controller = new Controller({ model, view, publish: publish(socket) })
       controller.bindEvents()

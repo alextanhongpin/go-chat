@@ -4,9 +4,10 @@ import (
 	"log"
 	"time"
 
-	"github.com/alextanhongpin/go-chat/ticket"
 	"github.com/gorilla/websocket"
 	"github.com/pkg/errors"
+
+	"github.com/alextanhongpin/go-chat/ticket"
 )
 
 const (
@@ -29,11 +30,6 @@ type Client struct {
 	Send chan Message
 }
 
-// // Close will terminate the client websocket connection
-// func (s *Subscription) Close() {
-// 	s.Conn.Close()
-// }
-
 // Read will proceed to read the messages published by the client
 func (c *Client) Read(pubsub *PubSub, room *Room) {
 	c.Conn.SetReadLimit(maxMessageSize)
@@ -51,11 +47,12 @@ func (c *Client) Read(pubsub *PubSub, room *Room) {
 			break
 		}
 
-		_, err := ticket.Verify(msg.Token)
+		user, err := ticket.Verify(msg.Token)
 		if err != nil {
 			log.Println(errors.Wrap(err, "invalid token"))
 			break
 		}
+		msg.Room = user.ID
 
 		if err := pubsub.Publish(msg); err != nil {
 			log.Println(errors.Wrap(err, "error publishing"))

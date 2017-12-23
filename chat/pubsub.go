@@ -22,14 +22,23 @@ func (ps *PubSub) Conn() redis.Conn {
 
 // Publish a message to a channel
 func (ps *PubSub) Publish(msg Message) error {
+	c := ps.Conn()
+	defer c.Close()
+
+	// Get the user's history
+	if msg.Type == "history" {
+		messages, err := redis.Strings(c.Do("LRANGE", msg.Room, 0, 10))
+		if err != nil {
+			return errors.Wrap(err, "error getting chat history")
+		}
+
+		msg.History = messages
+	}
 
 	out, err := json.Marshal(msg)
 	if err != nil {
 		return err
 	}
-
-	c := ps.Conn()
-	defer c.Close()
 
 	// TODO: Make channel a variable
 	if _, err := c.Do("PUBLISH", "chat", string(out)); err != nil {
@@ -39,7 +48,15 @@ func (ps *PubSub) Publish(msg Message) error {
 		return errors.Wrap(err, "unable to flush published message to Redis")
 	}
 
-	// LPUSH and LTRIM, LRANGE 0 10
+	// Store the message as a history
+	if err := c.Send("LPUSH", msg.Room, string(out)); err != nil {
+		return errors.Wrap(err, "error storing chat history")
+	}
+
+	// Trim the message so that only the last 10 messages are stored
+	if err := c.Send("LTRIM", msg.Room, 0, 10); err != nil {
+		return errors.Wrap(err, "error trimming chat history")
+	}
 
 	return nil
 }
