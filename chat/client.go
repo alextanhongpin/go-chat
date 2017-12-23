@@ -4,6 +4,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/alextanhongpin/go-chat/ticket"
 	"github.com/gorilla/websocket"
 	"github.com/pkg/errors"
 )
@@ -43,6 +44,19 @@ func (c *Client) Read(pubsub *PubSub, room *Room) {
 			break
 		}
 
+		// Carry out validation for different type of message type here
+		// e.g. authentication
+		if msg.Token == "" {
+			log.Println("error: user is not authenticated")
+			break
+		}
+
+		_, err := ticket.Verify(msg.Token)
+		if err != nil {
+			log.Println(errors.Wrap(err, "invalid token"))
+			break
+		}
+
 		if err := pubsub.Publish(msg); err != nil {
 			log.Println(errors.Wrap(err, "error publishing"))
 			break
@@ -64,6 +78,9 @@ func (c *Client) Write() {
 				c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
+			// Perform cleaning of data here (hiding data that does not want to be exposed such as token)
+			message.Room = ""
+			message.Token = ""
 			c.Conn.WriteJSON(message)
 		}
 	}

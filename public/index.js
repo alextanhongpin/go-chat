@@ -5,12 +5,12 @@ function onOpen (socket) {
     //   type: 'authenticate',
     //   payload: { token: 'xxx' }
     // }
-    const msg = {
-      type: 'authenticate',
-      data: 'some token',
-      room: ''
-    }
-    socket.send(JSON.stringify(msg))
+    // const msg = {
+    //   type: 'authenticate',
+    //   data: 'some token',
+    //   room: ''
+    // }
+    // socket.send(JSON.stringify(msg))
   }
 }
 
@@ -89,7 +89,8 @@ class Controller {
     this.publish({
       type: model.get('username'),
       data: model.get('message'),
-      room: model.get('room')
+      room: model.get('room'),
+      token: model.get('token')
     })
     evt.currentTarget.value = ''
   }
@@ -117,6 +118,7 @@ class Controller {
       const model = new Model()
       model.set('username', username)
       model.set('room', 'abc123')
+      model.set('token', ticket)
 
       const controller = new Controller({ model, view, publish: publish(socket) })
       controller.bindEvents()
