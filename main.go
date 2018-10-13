@@ -7,7 +7,7 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/alextanhongpin/go-chat/chat"
+	"github.com/alextanhongpin/go-chat/server"
 	"github.com/alextanhongpin/go-chat/ticket"
 )
 
@@ -18,19 +18,21 @@ const (
 )
 
 func main() {
+	// cs := chat.NewServer(redisPort, redisChannel)
 
-	cs := chat.NewServer(redisPort, redisChannel)
-
-	go cs.Run()
-	go cs.Subscribe()
+	// go cs.Run()
+	// go cs.Subscribe()
 
 	mux := http.NewServeMux()
 	mux.Handle("/", http.FileServer(http.Dir("./public")))
-	mux.HandleFunc("/ws", cs.ServeWS())
+	// mux.HandleFunc("/ws", cs.ServeWS())
+	s := server.New()
+	defer s.Close()
+	mux.HandleFunc("/ws", s.ServeWS())
 
-	mux.HandleFunc("/auth", handleAuth)
+	// mux.HandleFunc("/auth", handleAuth)
 	// mux.HandleFunc("/chat-histories", handleHistory)
-	go checkGoroutine()
+	// go checkGoroutine()
 
 	log.Printf("listening to port *%s. press ctrl + c to cancel.\n", port)
 	log.Fatal(http.ListenAndServe(port, mux))

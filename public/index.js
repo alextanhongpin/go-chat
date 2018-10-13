@@ -3,8 +3,7 @@ function onOpen (socket, model) {
   return function (event) {
     const msg = {
       type: 'history', // Fetch the last conversations
-      data: '',
-      room: '', // model.get('room'),
+      data: model.get('data'),
       token: model.get('token')
     }
 
@@ -24,32 +23,31 @@ function publish (socket) {
   }
 }
 
-class EventBus {
-  constructor () {
-    this.events = {}
-  }
-  on (event, fn) {
-    if (!this.events[event]) {
-      this.events[event] = []
-    }
-    this.events[event].push(fn)
-  }
-  trigger (event, params) {
-    if (!this.events[event]) {
-      return
-    }
-    this.events[event].forEach(fn => {
-      fn(params)
-    })
-  }
-}
+// class EventBus {
+//   constructor () {
+//     this.events = {}
+//   }
+//   on (event, fn) {
+//     if (!this.events[event]) {
+//       this.events[event] = []
+//     }
+//     this.events[event].push(fn)
+//   }
+//   trigger (event, params) {
+//     if (!this.events[event]) {
+//       return
+//     }
+//     this.events[event].forEach(fn => {
+//       fn(params)
+//     })
+//   }
+// }
 
 class View {
   constructor () {
     this.message = document.getElementById('message')
     this.submitMessage = document.getElementById('submit_message')
     this.username = document.getElementById('username')
-    this.room = document.getElementById('room')
   }
 }
 
@@ -79,7 +77,7 @@ class Controller {
   }
 
   onEnterMessage (evt) {
-    this.model.set('message', evt.currentTarget.value)
+    this.model.set(evt.currentTarget.name, evt.currentTarget.value)
   }
 
   onSubmitMessage (evt) {
@@ -87,7 +85,6 @@ class Controller {
     this.publish({
       type: model.get('username'),
       data: model.get('message'),
-      // room: model.get('room'),
       token: model.get('token')
     })
     evt.currentTarget.value = ''
@@ -96,10 +93,11 @@ class Controller {
 
 (async function () {
   try {
-    const body = await window.fetch('/auth', {
-      method: 'POST'
-    })
-    const response = await body.json()
+    // const body = await window.fetch('/auth', {
+    //   method: 'POST'
+    // })
+    // const response = await body.json()
+    const response = true
     if (response) {
       const { ticket } = response
       console.log('ticket:', ticket)
@@ -108,12 +106,13 @@ class Controller {
       console.log(`hello, ${username}!`)
 
       const view = new View()
+      view.username.value = username
       const model = new Model()
       model.set('username', username)
-      // model.set('room', 'abc123')
       model.set('token', ticket)
 
-      const socket = new window.WebSocket(`ws://localhost:4000/ws?ticket=${ticket}`)
+      // const socket = new window.WebSocket(`ws://localhost:4000/ws?ticket=${ticket}`)
+      const socket = new window.WebSocket(`ws://localhost:4000/ws`)
 
       socket.onopen = onOpen(socket, model)
       socket.onmessage = onMessage(socket)
