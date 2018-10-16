@@ -71,13 +71,17 @@ getUsersFromRoom(room)
 broadcast(room)
 ```
 
-The API may look like this:
+The API may look like this, and all endpoints are authorized:
 
 ```
 /v1/groups/:groupname/users/:id
 /v1/groups/:groupname/users
+/v1/groups/:groupname/messages
+or
+/v1/messages/groups
 /v1/messages
 /v1/messages/:id
+/v1/users/:id/contacts # To get the contact lists to display in the chat
 ```
 
 If a room has only 1 user, then it is a private chat, else it would be a group chat. When the user join the chat server, we can do the following operations to enable them to chat:
@@ -85,7 +89,7 @@ If a room has only 1 user, then it is a private chat, else it would be a group c
 ```
 // Pseudo-code in any language.
 func join():
-  // Perform handshake to check origin
+  // Perform handshake to check origin or valid ws endpoint.
   handshake() 
   
   // Perform authorization of the user. This could be done by passing a valid token that can validated by the chat server.
@@ -98,6 +102,12 @@ func join():
   // Set the user's connection to the in-memory storage. This will tie the client to a specific chat-server, but messages could still be distributed across servers through redis pub-sub.
   localconn.set(id, conn)
   
+  // Additionally, we might want to store the user's online status in an external storage. This would allow us to check if the user is online or not. The cache will expire after 1 minute, meaning the user has to consistently ping the redis storage to tell they are online.
+  usercache.set(id, exp=1min)
+  
+  // Get the user's group from the database. Note that this can be done on the client-side, but we might need to validate if the client's request is valid, and hence need to be loaded on the server side. This can be cached to improve performance.
+  groups = groupDB.get(id)
+  
   // Read event loop. 
   for {
     let msg = conn.read()
@@ -105,22 +115,84 @@ func join():
     // Store the message in persistent storage.
     snapshot(msg)
     
-    // Send to external pub/sub.
-    pubsub.publish(msg.to, msg)
+    match msg.type {
+      case group:
+        // Get all users in the group chat.
+        ids = groups.get(msg.to)
+        
+        // The delivery can be concurrent.
+        for id in ids:
+           // We can perform additional checking to see if the user is online before sending the message.
+           if usercache.get(id):
+             pubsub.publish(id, msg)
+      case single:
+        // Send to external pub/sub.
+        pubsub.publish(msg.to, msg)
+    }
+  }
+  
+  // Another background task that runs periodically to set the user's status to online.
+  now = time()
+  for {
+    nextTimer(now + 55sec):
+      now = now
+      usercache.set(id, exp=now+1min)
   }
   
   // Write event loop. Theoretically running in a separate thread to avoid blocking the main thread.
   for {
     msg = pubsub.receive()
+    // Note that the other user might not be online to receive the messages. This will was reads from the pub/sub.
+    // Another alternative is to check if the user is online before triggering the pub/sub send.
     conn = localconn.get(msg.to)
-    conn.write(msg)
+    
+    // User might not be online, or the connection might not be on this server.
+    if conn:
+      conn.write(msg)
   }
 
   // Cleanup.
   // We have to remove the user at the end of the session. Note that this step might be skipped if an error happened, and the user might not be successfully unsubscribed. To ensure that the user is always removed from the session, ping em periodically.
   pubsub.unsubscribe(id)
   localconn.unset(id, conn)
+  // We don't need to cleanup user cache. This would expire automatically. Also, this might provide additional buffer if the user just connect/disconnect frequently.
+  // usercache.remove(id)
+  delete group
 ```
+
+The message request may look like this:
+```js
+{
+  "from": "", // Excluded. Detected by chat server.
+  "to": "group_id", // Send from client side.
+  "msg": "hello world",
+  "ts": 111, // Timestamp of sending. We probably need another timestamp on the server when chat server receive the message.
+  "type": "group" // Or single
+}
+```
+
+The message response may look like this:
+
+```js
+{
+  "from": "", // Can be excluded, only the chat server should know who the `from` and `to` originate.
+  "to": "", // Excluded. Only used in the chat server.
+  "group": "Group A", // The name of the displayed group. Or the sender name.
+  "participants": ["User A", "User B", "User C"],
+  "msg": "hello world",
+  "ts": 1111111, // Timestamp, shortform to save bytes.  
+}
+```
+
+With this architecture, the user's may be distributed to different servers when they are online:
+
+```
+                                |-> Server 1: User A, User B
+msg -> pub/sub -> RedisCluster -|
+                                |-> Server 2: User C
+```
+
+Can the user exist on two different chat server, because their history is not cleaned properly? Possible. The outcome is the user might receive two same notifications.
 
 ## References
 - https://www.thepolyglotdeveloper.com/2016/12/create-real-time-chat-app-golang-angular-2-websockets/
