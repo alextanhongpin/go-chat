@@ -74,3 +74,16 @@ func handleAuth(w http.ResponseWriter, r *http.Request) {
 	// Return as json response
 	fmt.Fprintf(w, `{"ticket": "%s"}`, token)
 }
+
+// type Conversation struct {
+//         RoomID string
+//         Name string
+//         Messages []string
+// }
+//
+// func getConversations(w http.ResponseWriter ,r  *http.Request ) {
+//         data := []Conversation{
+//                 {"1", "john", []string{"hello"}}
+//         }
+//         json.NewEncoder(w).Encode(data)
+// }

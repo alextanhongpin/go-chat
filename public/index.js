@@ -84,7 +84,7 @@ class Controller {
     const model = this.model
     this.publish({
       type: model.get('username'),
-      data: model.get('message'),
+      data: model.get('data'),
       token: model.get('token')
     })
     evt.currentTarget.value = ''
@@ -112,7 +112,7 @@ class Controller {
       model.set('token', ticket)
 
       // const socket = new window.WebSocket(`ws://localhost:4000/ws?ticket=${ticket}`)
-      const socket = new window.WebSocket(`ws://localhost:4000/ws`)
+      const socket = new window.WebSocket(`ws://localhost:4000/ws?user=${username}`)
 
       socket.onopen = onOpen(socket, model)
       socket.onmessage = onMessage(socket)

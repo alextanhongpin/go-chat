@@ -1,7 +1,6 @@
 package server
 
 import (
-	"fmt"
 	"log"
 	"net/http"
 
@@ -15,8 +14,9 @@ var (
 // https://github.com/gorilla/websocket/issues/46
 
 type Message struct {
-	Data  string `json:"data"`
-	From  string `json:"-"`
+	Data string `json:"data"`
+	// From  string `json:"-"`
+	Room  string `json:"room"`
 	Token string `json:"token"`
 	Type  string `json:"type"`
 }
@@ -52,7 +52,7 @@ func (s *Server) Close() {
 }
 
 // Broadcast sends a message to a client.
-func (s *Server) Broadcast(from, to string, msg Message) error {
+func (s *Server) Broadcast(to string, msg Message) error {
 	if client, found := s.clients[to]; found {
 		if err := client.WriteJSON(msg); err != nil {
 			log.Printf("error: %v\n", err)
@@ -78,14 +78,14 @@ func (s *Server) eventloop() {
 			log.Println("server: receive msg", msg)
 
 			// Get the list of peers it can send message to.
-			clients := s.mapper.Get(msg.From)
+			clients := s.mapper.Get(msg.Room)
 
 			// Send only to clients in the particular room.
 			for peer := range clients {
 				log.Println("server: broadcasting message to peer", peer, msg)
 				// This could be executed in a goroutine if the
 				// users have many friends. Fanout operation.
-				s.Broadcast(msg.From, peer, msg)
+				s.Broadcast(peer, msg)
 			}
 		}
 	}
@@ -101,8 +101,8 @@ func (s *Server) ServeWS() http.HandlerFunc {
 
 		// We can get the querystring parameter from the websocket
 		// endpoint. This might be useful for validating parameters.
-		// q := r.URL.Query()
-		// q.Get("token")
+		q := r.URL.Query()
+		user := q.Get("user")
 		// From here, we can get the top15 ranked friends and add them into the list.
 
 		// We can also perform checking of origin here.
@@ -119,36 +119,30 @@ func (s *Server) ServeWS() http.HandlerFunc {
 		// Make sure we close the connection when the function returns.
 		defer ws.Close()
 
-		// Add the connected client into our map.
-		room := fmt.Sprint(len(s.clients) + 1)
-		log.Printf("server: room %s has joined\n", room)
-		if room == "1" {
-			log.Printf("server: client %s has added peer 2\n", room)
-			s.mapper.Add("1", "2")
-		}
-		if room == "2" {
-			log.Printf("server: client %s has added peer 1\n", room)
-			s.mapper.Add("2", "1")
-		}
-
 		// Add client to the session.
-		s.clients[room] = ws
+		s.clients[user] = ws
 		defer func() {
-			log.Println("server: remove session", room)
+			log.Println("server: remove session", user)
 			// Remove client from the session.
-			delete(s.clients, room)
+			delete(s.clients, user)
 
 			// Remove client from the listening peers.
-			log.Println("server: delete relationships", room)
-			s.mapper.Delete(room)
+			log.Println("server: delete relationships", user)
+			s.mapper.Delete(user)
+
+			// Broadcast the message to notify other peers that the user went offline.
 		}()
+
+		if user == "john" || user == "jane" {
+			s.mapper.Add("room1", user)
+		}
 
 		// Read messages.
 		ws.SetReadLimit(maxMessageSize)
 		for {
 			var msg Message
 			// Override the decision here.
-			msg.From = room
+			msg.Room = "room1"
 			if err := ws.ReadJSON(&msg); err != nil {
 				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
 					log.Printf("error: %v, user-agent: %v", err, r.Header.Get("User-Agent"))
