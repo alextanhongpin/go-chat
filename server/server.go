@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -21,6 +22,8 @@ type Message struct {
 	Room  string `json:"room"`
 	Token string `json:"token"`
 	Type  string `json:"type"`
+	To    string `json:"to"`
+	From  string `json:"from"`
 	user  string
 }
 
@@ -32,7 +35,7 @@ var upgrader = websocket.Upgrader{
 type Server struct {
 	broadcast chan Message
 	clients   map[string]*websocket.Conn
-	mapper    *Mapper
+	rooms     RoomManager
 	quit      chan struct{}
 }
 
@@ -40,8 +43,8 @@ func New() *Server {
 	s := Server{
 		broadcast: make(chan Message),
 		clients:   make(map[string]*websocket.Conn),
-		mapper:    NewMapper(),
 		quit:      make(chan struct{}),
+		rooms:     NewRoomManager(), // TODO: Add bloom filter (?).
 	}
 
 	go s.eventloop()
@@ -67,7 +70,7 @@ func (s *Server) Broadcast(to string, msg Message) error {
 			client.Close()
 
 			// Delete all relationships.
-			s.mapper.Delete(to)
+			s.rooms.Del(to)
 			return err
 		}
 	}
@@ -90,13 +93,13 @@ func (s *Server) eventloop() {
 
 			default:
 				log.Println("server: receive msg", msg)
-				s.mapper.Add(msg.Room, msg.user)
+				s.rooms.Add(msg.user, msg.Room)
 
 				// Get the list of peers it can send message to.
-				clients := s.mapper.Get(msg.Room)
+				clients := s.rooms.GetUsers(msg.Room)
 
 				// Send only to clients in the particular room.
-				for peer := range clients {
+				for _, peer := range clients {
 					log.Println("server: broadcasting message to peer", peer, msg)
 					// This could be executed in a goroutine if the
 					// users have many friends. Fanout operation.
@@ -137,6 +140,7 @@ func (s *Server) ServeWS(machine ticket.Dispenser, db database.UserRepository) h
 			http.Error(w, err.Error(), http.StatusForbidden)
 			return
 		}
+
 		user := strconv.Itoa(u.ID)
 		// From here, we can get the top15 ranked friends and add them into the list.
 		ws, err := upgrader.Upgrade(w, r, nil)
@@ -149,29 +153,38 @@ func (s *Server) ServeWS(machine ticket.Dispenser, db database.UserRepository) h
 
 		// Add client to the session.
 		s.clients[user] = ws
-		defer func() {
+		cleanup := func() {
 			log.Println("server: remove session", user)
 			// Remove client from the session.
 			delete(s.clients, user)
 
 			// Remove client from the listening peers.
 			log.Println("server: delete relationships", user)
-			s.mapper.Delete(user)
-
 			// Broadcast the message to notify other peers that the user went offline.
-		}()
-
-		if user == "john" || user == "jane" {
-			s.mapper.Add("room1", user)
+			// Create an index table of all the rooms the user is in.
+			// When the user disconnect, get all the rooms the user is in,
+			// Delete the user from the room, and notify all party in the room.
+			// for room := range s.rooms.get(user) {
+			// }
+			rooms := s.rooms.GetRooms(user)
+			for _, room := range rooms {
+				msg := Message{
+					Room: room,
+					Data: fmt.Sprintf("%s went offline", user),
+					Type: "presence",
+				}
+				s.broadcast <- msg
+			}
+			s.rooms.Del(user)
 		}
+		defer cleanup()
 
 		// Read messages.
 		ws.SetReadLimit(maxMessageSize)
-		var msg Message
-		// msg.From = user
+
 		for {
 			// Override the decision here.
-			// msg.Room = "room1"
+			var msg Message
 			msg.user = user
 			if err := ws.ReadJSON(&msg); err != nil {
 				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
