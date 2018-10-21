@@ -37,14 +37,16 @@ type Server struct {
 	clients   map[string]*websocket.Conn
 	rooms     RoomManager
 	quit      chan struct{}
+	db        *database.Conn
 }
 
-func New() *Server {
+func New(db *database.Conn) *Server {
 	s := Server{
 		broadcast: make(chan Message),
 		clients:   make(map[string]*websocket.Conn),
 		quit:      make(chan struct{}),
 		rooms:     NewRoomManager(), // TODO: Add bloom filter (?).
+		db:        db,
 	}
 
 	go s.eventloop()
@@ -85,15 +87,28 @@ func (s *Server) eventloop() {
 			return
 		case msg := <-s.broadcast:
 			switch msg.Type {
-			// case "presence":
-			// s.mapper.Has(msg.Room)
-			// case "join_room":
-			//         // Add the user into the room.
-			//         s.mapper.Add(msg.Room, msg.user)
+			case "presence":
+				clients := s.rooms.GetUsers(msg.Room)
 
+				// Send only to clients in the particular room.
+				for _, peer := range clients {
+					log.Println("server: broadcasting message to peer", peer, msg)
+					// This could be executed in a goroutine if the
+					// users have many friends. Fanout operation.
+					s.Broadcast(peer, msg)
+				}
 			default:
 				log.Println("server: receive msg", msg)
 				s.rooms.Add(msg.user, msg.Room)
+
+				// Store the conversation in a database. It
+				// might be a better idea to use a queue rather
+				// than writing directly to the datastore.
+				_, err := s.db.CreateConversationReply(msg.user, msg.Room, msg.Data)
+				if err != nil {
+					log.Printf("error: conversation create error, %v\n", err)
+					continue
+				}
 
 				// Get the list of peers it can send message to.
 				clients := s.rooms.GetUsers(msg.Room)
@@ -160,12 +175,8 @@ func (s *Server) ServeWS(machine ticket.Dispenser, db database.UserRepository) h
 
 			// Remove client from the listening peers.
 			log.Println("server: delete relationships", user)
-			// Broadcast the message to notify other peers that the user went offline.
-			// Create an index table of all the rooms the user is in.
-			// When the user disconnect, get all the rooms the user is in,
-			// Delete the user from the room, and notify all party in the room.
-			// for room := range s.rooms.get(user) {
-			// }
+
+			// Notify other users that the user went offline.
 			rooms := s.rooms.GetRooms(user)
 			for _, room := range rooms {
 				msg := Message{
@@ -178,6 +189,22 @@ func (s *Server) ServeWS(machine ticket.Dispenser, db database.UserRepository) h
 			s.rooms.Del(user)
 		}
 		defer cleanup()
+
+		// Notify other party that this user is online.
+		rooms, err := s.db.GetRoom(user)
+		if err == nil {
+			log.Println("adding users into room")
+			for _, r := range rooms {
+				room := strconv.Itoa(int(r))
+				s.rooms.Add(user, room)
+				msg := Message{
+					Room: room,
+					Data: fmt.Sprintf("%s went online", user),
+					Type: "presence",
+				}
+				s.broadcast <- msg
+			}
+		}
 
 		// Read messages.
 		ws.SetReadLimit(maxMessageSize)

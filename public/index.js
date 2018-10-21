@@ -6,6 +6,7 @@ async function main () {
       user_id: user
     })
   })
+
   const response = await body.json()
   if (response) {
     console.log(`user ${user} is authenticated`)

@@ -2,11 +2,9 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
-	"runtime"
 	"strconv"
 	"time"
 
@@ -23,22 +21,25 @@ const (
 
 func main() {
 	var (
-		dbUser = os.Getenv("DB_USER")
-		dbPass = os.Getenv("DB_PASS")
-		dbName = os.Getenv("DB_NAME")
-		// port   = os.Getenv("PORT")
+		dbUser    = os.Getenv("DB_USER")
+		dbPass    = os.Getenv("DB_PASS")
+		dbName    = os.Getenv("DB_NAME")
+		jwtSecret = os.Getenv("JWT_SECRET")
+		jwtIssuer = os.Getenv("JWT_ISSUER")
 	)
+
 	db, err := database.New(dbUser, dbPass, dbName)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer db.Close()
-	ticketMachine := ticket.NewMachine([]byte("secret"), "go-chat", 5*time.Minute)
+
+	ticketMachine := ticket.NewMachine([]byte(jwtSecret), jwtIssuer, 5*time.Minute)
 
 	mux := http.NewServeMux()
 	mux.Handle("/", http.FileServer(http.Dir("./public")))
 	// mux.HandleFunc("/ws", cs.ServeWS())
-	s := server.New()
+	s := server.New(db)
 	defer s.Close()
 
 	mux.HandleFunc("/ws", s.ServeWS(ticketMachine, db))
@@ -48,24 +49,6 @@ func main() {
 
 	log.Printf("listening to port *%s. press ctrl + c to cancel.\n", port)
 	log.Fatal(http.ListenAndServe(port, mux))
-}
-
-func checkGoroutine() {
-	var ch chan int
-	if false {
-		ch = make(chan int, 1)
-		ch <- 1
-	}
-	go func(ch chan int) {
-		<-ch
-	}(ch)
-	c := time.Tick(1 * time.Second)
-
-	go func() {
-		for range c {
-			fmt.Printf("#goroutines: %d\n", runtime.NumGoroutine())
-		}
-	}()
 }
 
 func handleAuth(machine ticket.Dispenser, db database.UserRepository) http.HandlerFunc {
@@ -83,7 +66,6 @@ func handleAuth(machine ticket.Dispenser, db database.UserRepository) http.Handl
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		// TODO: Validate if the user is a valid user by checking the database.
 
 		user, err := db.GetUserByName(req.UserID)
 		if err != nil {
