@@ -1,0 +1,56 @@
+<word-count>
+	<span slot='text'>hello world!</span>
+</word-count>
+<script>
+
+	let tmpl = document.createElement('template')
+	tmpl.innerHTML = `
+		<slot name='text'></slot><slot name='count'></slot>
+	`
+
+	class WordCount extends HTMLElement {
+		static get observedAttributes(){
+			return ['count']
+		}
+		constructor() {
+			super()
+			const shadowRoot = this.attachShadow({ mode: 'open' })
+			shadowRoot.appendChild(tmpl.content.cloneNode(true))
+
+		}
+		connectedCallback() {
+			if (!this.hasAttribute('count')) {
+				let count = this.querySelector('[slot="text"]')
+				// this.setAttribute('count', count.textContent.length)
+				this.count = count.textContent.length
+			}
+		}
+		get count() {
+			return this.getAttribute('count')
+		}
+		set count(value) {
+			this.setAttribute('count', value)
+		}
+		attributeChangedCallback(name, oldValue, newValue){
+			switch (name) {
+				case 'count':
+					console.log('count', name, oldValue, newValue)
+					let text = `(${newValue} characters)`
+					let count = this.querySelector('[slot="count"]')
+					if (!count) {
+						count = document.createElement('small')
+						count.setAttribute('slot', 'count')
+						count.textContent = text
+						this.appendChild(count)
+					} else {
+						count.textContent = text
+					}
+					break
+				default:
+					console.log( name, oldValue, newValue)
+			}
+
+		}
+	}
+	customElements.define('word-count', WordCount)
+</script>
