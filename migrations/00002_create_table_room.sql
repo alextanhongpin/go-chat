@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS room (
 	type       boolean      DEFAULT 0, -- 0 means 1-to-1, 1 means group.
 	created_at datetime     DEFAULT CURRENT_TIMESTAMP,
 	updated_at datetime     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-	deleted_at datetime,
+	deleted_at datetime 	DEFAULT 0,
 	PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4; 
 

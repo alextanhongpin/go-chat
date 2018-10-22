@@ -211,6 +211,22 @@ async function connect() {
 }
 ```
 
+## Set Theory
+
+User has a many-to-many relationship with rooms. A room can have multiple user, and a user can have multiple room. We can use a _joint function_ in mysql to describe this relationship. We can store the user-room pair in Redis too rather than storing it in the memory. We do so by simply creating two Redis sets, one for users, another for rooms. Consider the following user A:
+
+```
+user A: {room 1, room 2}
+room 1: {user A, user B}
+room 2: {user A, user C}
+```
+
+User A belongs to room 1 and room2. When user A join the chat server, user A will be automatically added into all the rooms, and the other user will be notified of the existence of user A (presence indicator). When user A exits/disconnect from the chat server, we will first remove user A from each room, notify the other party, and then remove user A. 
+
+## Presence Indicator
+
+To detect if the user is online, we can use redis key and set the status to be online every t duration, and set the key to expire at t + n duration. 
+
 ## References
 - https://www.thepolyglotdeveloper.com/2016/12/create-real-time-chat-app-golang-angular-2-websockets/
 - https://devcenter.heroku.com/articles/go-websockets

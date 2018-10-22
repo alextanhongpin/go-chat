@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS conversation (
 	room_id    int,
 	created_at datetime     DEFAULT CURRENT_TIMESTAMP,
 	updated_at datetime     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-	deleted_at datetime,
+	deleted_at datetime     DEFAULT 0,
 	PRIMARY KEY (id),
 	FOREIGN KEY (user_id) REFERENCES user(id),
 	FOREIGN KEY (room_id) REFERENCES room(id)
