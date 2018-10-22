@@ -1,0 +1,135 @@
+<script>
+	function supportsImports() {
+	  return 'import' in document.createElement('link');
+	}
+
+	if (supportsImports()) {
+		console.log('supported')
+	} else {
+		console.log('not supported')
+	}
+	let template = document.createElement('template')
+	template.innerHTML = `
+		<style>
+		:host {
+			all: initial;
+			contain: content;
+		}
+		#timestamp {
+			color: #666666;
+		}
+		.status {
+			display: inline-block;
+			width: 8px;
+			height: 8px;
+			background: #888888;
+			border-radius: 50%;
+		}
+		.online {
+			background: #88FF88;
+		}
+		</style>
+		<div>
+			<slot id='timestamp' name='timestamp'></slot>
+			<slot id='text' name='text'></slot>
+			<slot class='status' name='status'></slot>
+			<input type='text' placeholder='Enter message'/>
+			<button id="button">Send</button>
+		</div>
+	`
+	class ChatRow extends HTMLElement {
+		static get observedAttributes() {
+			return ['value', 'timestamp', 'status', 'size']
+		}
+		constructor() {
+			super()
+			let shadowRoot = this.attachShadow({mode: 'open'})
+			.appendChild(template.content.cloneNode(true) )
+			this.conversations = []
+		}
+		connectedCallback() {
+			if (!this.hasAttribute('value')) {
+				this.value = 'no message'
+			}
+			this.timestamp = new Date()
+			this.status = this.hasAttribute('status')
+			const sendMessage = new CustomEvent('onmessage', { 
+				bubbles: true, 
+				composed: true,
+				detail: {
+					message: () => this.shadowRoot.querySelector('input').value
+				}
+			})
+			this.shadowRoot.getElementById('button').addEventListener('click', (evt) => {
+				console.log('clicked')
+				this.dispatchEvent(sendMessage)
+			})
+		}
+		get timestamp() {
+			return this.getAttribute('timestamp')
+		}
+		set timestamp(value) {
+			this.setAttribute('timestamp', value)
+		}
+		get value () {
+			return this.getAttribute('value')
+		}
+		set value(val) {
+			this.setAttribute('value', val)
+		}
+		get status() {
+			return this.getAttribute('status')
+		}
+		set status(val) {
+			this.setAttribute('status', val)
+		}
+		attributeChangedCallback(name, oldValue, newValue) {
+			console.log('attributeChanged', name, oldValue, newValue)
+			switch (name) {
+				case 'value':
+					let text = this.shadowRoot.querySelector('slot[name="text"]')
+					console.log('text', text)
+					if (!text) {
+						text = document.createElement('span')
+						text.setAttribute('slot', 'text')
+						text.textContent = newValue 
+						this.appendChild(text)
+					} else {
+						text.textContent = newValue
+					}
+					break
+				case 'timestamp':
+					let ts = this.shadowRoot.querySelector('slot[name="timestamp"]')
+					console.log('ts', ts)
+					if (!ts) {
+						ts = document.createElement('span')
+						ts.setAttribute('slot', 'timestamp')
+						ts.textContent = new Date(newValue).toISOString()
+						this.appendChild(ts)
+					} else {
+						ts.textContent = newValue
+					}
+					break
+				case 'status':
+					let status = this.shadowRoot.querySelector('slot[name="status"]')
+					console.log('status', status)
+					if (!status) {
+						status = document.createElement('span')
+						status.setAttribute('slot', 'status')
+						this.appendChild(status)
+					}
+					if (newValue === '1') {
+						status.classList.add('online')
+					} else {
+						status.classList.remove('online')
+					}
+					break
+				case 'size':
+					console.log(this.conversations)
+				default:
+			}
+
+		}
+	}
+	window.customElements.define('chat-row', ChatRow)
+</script>

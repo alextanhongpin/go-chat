@@ -1,7 +1,6 @@
 package server
 
 import (
-	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -141,9 +140,7 @@ func (s *Server) ServeWS(machine ticket.Dispenser, db database.UserRepository) h
 
 		// We can get the querystring parameter from the websocket
 		// endpoint. This might be useful for validating parameters.
-		q := r.URL.Query()
-		token := q.Get("token")
-
+		token := r.URL.Query().Get("token")
 		userID, err := machine.Verify(token)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -181,7 +178,8 @@ func (s *Server) ServeWS(machine ticket.Dispenser, db database.UserRepository) h
 			for _, room := range rooms {
 				msg := Message{
 					Room: room,
-					Data: fmt.Sprintf("%s went offline", user),
+					// Data: fmt.Sprintf("%s went offline", user),
+					Data: "0",
 					Type: "presence",
 				}
 				s.broadcast <- msg
@@ -199,7 +197,9 @@ func (s *Server) ServeWS(machine ticket.Dispenser, db database.UserRepository) h
 				s.rooms.Add(user, room)
 				msg := Message{
 					Room: room,
-					Data: fmt.Sprintf("%s went online", user),
+					// Data: fmt.Sprintf("%s went online", user),
+					Data: "1",
+					From: user,
 					Type: "presence",
 				}
 				s.broadcast <- msg

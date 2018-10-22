@@ -44,6 +44,8 @@ func main() {
 
 	mux.HandleFunc("/ws", s.ServeWS(ticketMachine, db))
 	mux.HandleFunc("/auth", handleAuth(ticketMachine, db))
+	mux.HandleFunc("/rooms", handleGetRooms(db))
+
 	// mux.HandleFunc("/chat-histories", handleHistory)
 	// go checkGoroutine()
 
@@ -95,4 +97,27 @@ type authRequest struct {
 
 type authResponse struct {
 	Token string `json:"token"`
+}
+
+func handleGetRooms(db database.RoomRepository) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID := r.URL.Query().Get("user_id")
+		if userID == "" {
+			http.Error(w, "invalid user id", http.StatusBadRequest)
+			return
+		}
+		rooms, err := db.GetRoom(userID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		json.NewEncoder(w).Encode(getRoomsResponse{
+			Data: rooms,
+		})
+	}
+}
+
+type getRoomsResponse struct {
+	Data []int64 `json:"data"`
 }

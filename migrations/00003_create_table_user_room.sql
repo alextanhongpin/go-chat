@@ -3,8 +3,8 @@
 CREATE TABLE IF NOT EXISTS user_room (
 	user_id int,
 	room_id int,
-	created_at datetime   DEFAULT UTC_TIMESTAMP,
-	updated_at datetime   DEFAULT UTC_TIMESTAMP ON UPDATE UTC_TIMESTAMP, 
+	created_at datetime     DEFAULT CURRENT_TIMESTAMP,
+	updated_at datetime     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 	deleted_at datetime,
 	FOREIGN KEY (user_id) REFERENCES user(id),
 	FOREIGN KEY (room_id) REFERENCES room(id)

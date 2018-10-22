@@ -1,4 +1,5 @@
 async function main () {
+
   const user = window.prompt('What is your username?')
   const body = await window.fetch('/auth', {
     method: 'POST',
@@ -13,14 +14,43 @@ async function main () {
     const { token } = response
 
     const socket = new window.WebSocket(`ws://localhost:4000/ws?token=${token}`)
+    socket.onopen = async () => {
 
-    // socket.onopen = () => {
-    //   socket.send(JSON.stringify({
-    //     type: 'handshake'
-    //   }))
-    // }
+      const userId = user === 'john' ? 1 : 2
+      let body = await window.fetch(`/rooms?user_id=${userId}`)
+      let response = await body.json()
+      response.data.forEach(room => {
+        let chatRow = document.createElement('chat-row')
+        chatRow.value = room
+        chatRow.addEventListener('onmessage', function (evt) {
+          const payload = {
+            type: 'message',
+            user,
+            data: evt.detail.message(), 
+            room: evt.currentTarget.value 
+          }
+          console.log('sending:', payload)
+          this.conversations = this.conversations.concat([payload])
+          console.log(this.conversations)
+          send(payload)
+        })
+        $('chat').appendChild(chatRow)
+      })
+      // socket.send(JSON.stringify({
+      //   type: 'handshake'
+      // }))
+    }
     socket.onmessage = (event) => {
-      console.log(JSON.parse(event.data))
+      try {
+        let message = JSON.parse(event.data)
+        console.log('got message', message)
+        let { data, room } = message
+        let el = document.querySelector(`chat-row[value="${room}"]`)
+        el && (el.status = data)
+        // el.status = data
+      } catch (error) {
+        console.error(error)
+      }
     }
 
     function send(msg) {

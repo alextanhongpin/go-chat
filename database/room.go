@@ -1,5 +1,10 @@
 package database
 
+type RoomRepository interface {
+	CreateRoom(users ...string) error
+	GetRoom(userID string) ([]int64, error)
+}
+
 func (c *Conn) CreateRoom(users ...string) error {
 	tx, err := c.db.Begin()
 
