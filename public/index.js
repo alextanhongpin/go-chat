@@ -19,7 +19,15 @@ async function main () {
       const userId = user === 'john' ? 1 : 2
       let body = await window.fetch(`/rooms?user_id=${userId}`)
       let response = await body.json()
-      response.data.forEach(room => {
+      response.data.forEach(({ room_id: room, user_id }) => {
+
+        // Ask for the room status.
+        send({
+          type: 'status',
+          data: user_id,
+          room: room
+        })
+
         let chatRow = document.createElement('chat-row')
         chatRow.value = room
         chatRow.addEventListener('onmessage', function (evt) {
@@ -35,6 +43,7 @@ async function main () {
           send(payload)
         })
         $('chat').appendChild(chatRow)
+        // Check for presence in room.
       })
       // socket.send(JSON.stringify({
       //   type: 'handshake'
@@ -44,7 +53,7 @@ async function main () {
       try {
         let message = JSON.parse(event.data)
         console.log('got message', message)
-        let { data, room } = message
+        let { data, room, type } = message
         let el = document.querySelector(`chat-row[value="${room}"]`)
         el && (el.status = data)
         // el.status = data

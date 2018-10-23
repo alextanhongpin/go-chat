@@ -1,4 +1,6 @@
 <script>
+(function () {
+
 	function supportsImports() {
 	  return 'import' in document.createElement('link');
 	}
@@ -46,6 +48,9 @@
 			let shadowRoot = this.attachShadow({mode: 'open'})
 			.appendChild(template.content.cloneNode(true) )
 			this.conversations = []
+			this.state = {
+				users: []
+			}
 		}
 		connectedCallback() {
 			if (!this.hasAttribute('value')) {
@@ -64,6 +69,7 @@
 				console.log('clicked')
 				this.dispatchEvent(sendMessage)
 			})
+			this.users = []
 		}
 		get timestamp() {
 			return this.getAttribute('timestamp')
@@ -83,41 +89,23 @@
 		set status(val) {
 			this.setAttribute('status', val)
 		}
+		set users (val) {
+			console.log('setting users')
+			this.state.users = val
+		}
 		attributeChangedCallback(name, oldValue, newValue) {
 			console.log('attributeChanged', name, oldValue, newValue)
 			switch (name) {
 				case 'value':
 					let text = this.shadowRoot.querySelector('slot[name="text"]')
-					console.log('text', text)
-					if (!text) {
-						text = document.createElement('span')
-						text.setAttribute('slot', 'text')
-						text.textContent = newValue 
-						this.appendChild(text)
-					} else {
-						text.textContent = newValue
-					}
+					text.textContent = newValue
 					break
 				case 'timestamp':
 					let ts = this.shadowRoot.querySelector('slot[name="timestamp"]')
-					console.log('ts', ts)
-					if (!ts) {
-						ts = document.createElement('span')
-						ts.setAttribute('slot', 'timestamp')
-						ts.textContent = new Date(newValue).toISOString()
-						this.appendChild(ts)
-					} else {
-						ts.textContent = newValue
-					}
+					ts.textContent = newValue
 					break
 				case 'status':
 					let status = this.shadowRoot.querySelector('slot[name="status"]')
-					console.log('status', status)
-					if (!status) {
-						status = document.createElement('span')
-						status.setAttribute('slot', 'status')
-						this.appendChild(status)
-					}
 					if (newValue === '1') {
 						status.classList.add('online')
 					} else {
@@ -125,11 +113,12 @@
 					}
 					break
 				case 'size':
-					console.log(this.conversations)
+					console.log('size changed', this.conversations)
 				default:
 			}
 
 		}
 	}
 	window.customElements.define('chat-row', ChatRow)
+})()
 </script>

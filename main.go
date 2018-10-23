@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/alextanhongpin/go-chat/database"
+	"github.com/alextanhongpin/go-chat/entity"
+	"github.com/alextanhongpin/go-chat/repository"
 	"github.com/alextanhongpin/go-chat/server"
 	"github.com/alextanhongpin/go-chat/ticket"
 )
@@ -99,14 +101,14 @@ type authResponse struct {
 	Token string `json:"token"`
 }
 
-func handleGetRooms(db database.RoomRepository) http.HandlerFunc {
+func handleGetRooms(db repository.Room) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := r.URL.Query().Get("user_id")
 		if userID == "" {
 			http.Error(w, "invalid user id", http.StatusBadRequest)
 			return
 		}
-		rooms, err := db.GetRoom(userID)
+		rooms, err := db.GetRooms(userID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -119,5 +121,5 @@ func handleGetRooms(db database.RoomRepository) http.HandlerFunc {
 }
 
 type getRoomsResponse struct {
-	Data []int64 `json:"data"`
+	Data []entity.UserRoom `json:"data"`
 }

@@ -1,9 +1,6 @@
 package database
 
-type RoomRepository interface {
-	CreateRoom(users ...string) error
-	GetRoom(userID string) ([]int64, error)
-}
+import "github.com/alextanhongpin/go-chat/entity"
 
 func (c *Conn) CreateRoom(users ...string) error {
 	tx, err := c.db.Begin()
@@ -35,6 +32,7 @@ func (c *Conn) GetRoom(userID string) ([]int64, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer rows.Close()
 	var result []int64
 	for rows.Next() {
 		var i int64
@@ -43,6 +41,26 @@ func (c *Conn) GetRoom(userID string) ([]int64, error) {
 			return nil, err
 		}
 		result = append(result, i)
+	}
+	return result, nil
+}
+
+func (c *Conn) GetRooms(userID string) ([]entity.UserRoom, error) {
+	stmt := `SELECT l.user_id, l.room_id FROM user_room l LEFT JOIN user_room r ON l.room_id = r.room_id WHERE r.user_id = ? AND r.user_id != l.user_id`
+	rows, err := c.db.Query(stmt, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []entity.UserRoom
+	for rows.Next() {
+		var userRoom entity.UserRoom
+		err := rows.Scan(&userRoom.UserID, &userRoom.RoomID)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, userRoom)
 	}
 	return result, nil
 }

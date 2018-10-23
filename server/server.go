@@ -86,6 +86,20 @@ func (s *Server) eventloop() {
 			return
 		case msg := <-s.broadcast:
 			switch msg.Type {
+			case "status":
+				// Data is the user_id that we want to check the status of.
+				log.Println("got status", msg)
+				_, found := s.clients[msg.Data]
+				data := "0"
+				if found {
+					data = "1"
+				}
+				s.Broadcast(msg.user, Message{
+					Data: data,
+					Type: "status",
+					Room: msg.Room,
+					From: msg.Data,
+				})
 			case "presence":
 				clients := s.rooms.GetUsers(msg.Room)
 
@@ -152,6 +166,7 @@ func (s *Server) ServeWS(machine ticket.Dispenser, db database.UserRepository) h
 			http.Error(w, err.Error(), http.StatusForbidden)
 			return
 		}
+		log.Println("got user id", u)
 
 		user := strconv.Itoa(u.ID)
 		// From here, we can get the top15 ranked friends and add them into the list.

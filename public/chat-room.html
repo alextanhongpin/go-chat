@@ -1,0 +1,73 @@
+<script>
+	let template = document.createElement('template')
+	template.innerHTML = `
+		<style>
+			:host {
+				contain: content;
+			}	
+		</style>
+		<div>
+			<span class='status'></span>
+			<span class='user'></span>
+			<span class='ts'></span>
+		</div>
+	`
+
+	class ChatRoom extends HTMLElement {
+		static get observedAttributes () {
+			return []
+		}
+		constructor() {
+			super()
+
+			this.attachShadow({mode: 'open'})
+			.appendChild(template.content.cloneNode(true))
+			this.state = {
+				status: false,
+				room: null,
+				timestamp: null,
+				user: null
+			}
+		}
+
+		connectedCallback() {
+
+		}
+
+		set status (value) {
+			this.state.status = value
+			let $status = this.shadowRoot.querySelector('.status')
+			value ? $status.classList.add('is-online') : $status.classList.remove('is-online')
+		}
+
+		get status () {
+			return this.state.status
+		}
+
+		set timestamp(value) {
+			this.state.timestamp = value
+			let $ts = this.shadowRoot.querySelector('.ts')
+			$ts.textContent = new Date(value).toISOString()
+		}
+		
+		get timestamp() {
+			return this.state.timestamp
+		}
+
+		set user (value) {
+			this.state.user = value
+			let $user = this.shadowRoot.querySelector('.user')
+			$user.textContent = value
+		}
+
+		set room (value) {
+			this.state.room = value 
+		}
+
+		attributeChangedCallback(attrName, oldValue, newValue) {
+
+		}
+	}
+
+	window.customElements.define('chat-room', ChatRoom)
+</script>
