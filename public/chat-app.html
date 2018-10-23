@@ -111,7 +111,7 @@
 				$room.user = room.user_id
 				$room.room = room.room_id
 				
-				$rooms.appendChild($room)
+				!exist && $rooms.appendChild($room)
 				!exist && this.state.roomsCache.set(room, $room)
 				set.add(room)
 			})
