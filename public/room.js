@@ -1,10 +1,21 @@
-<script>
+(function () {
 	let template = document.createElement('template')
 	template.innerHTML = `
 		<style>
 			:host {
+        all: initial;
 				contain: content;
 			}	
+      .status {
+        background: #999999;
+        height: 8px;
+        width: 8px;
+        display: inline-block;
+        border-radius: 50%;
+      }
+      .status.is-online {
+        background: #4caf50;
+      }
 		</style>
 		<div>
 			<span class='status'></span>
@@ -70,4 +81,4 @@
 	}
 
 	window.customElements.define('chat-room', ChatRoom)
-</script>
+})()

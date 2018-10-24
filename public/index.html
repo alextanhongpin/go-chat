@@ -2,12 +2,14 @@
 <html>
 	<head>
 		<title>Example</title>
-		<!-- <link rel='import' href='./chat-row.html'/> -->
-		<link rel='import' href='./chat-room.html'/>
-		<link rel='import' href='./chat-app.html'/>
+
+		<!-- Putting in script will not load the custom elements in time -->
+		<link rel='import' href='./app.html'/>
+		<link rel='import' href='./room.html'/>
 	</head>
 	<body>
 		<h1>Go Chat</h1>
+
 		<chat-app socket_uri='ws://localhost:4000/ws'/>
 	</body>
 </html>

@@ -8,10 +8,10 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/alextanhongpin/go-chat/chat"
 	"github.com/alextanhongpin/go-chat/database"
 	"github.com/alextanhongpin/go-chat/entity"
 	"github.com/alextanhongpin/go-chat/repository"
-	"github.com/alextanhongpin/go-chat/server"
 	"github.com/alextanhongpin/go-chat/ticket"
 )
 
@@ -38,7 +38,7 @@ func main() {
 
 	ticketMachine := ticket.NewMachine([]byte(jwtSecret), jwtIssuer, 5*time.Minute)
 
-	s := server.New(db)
+	s := chat.New(db)
 	defer s.Close()
 
 	mux := http.NewServeMux()

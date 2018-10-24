@@ -1,79 +1,68 @@
 package chat
 
-// Room holds the clients in a particular room
-type Room struct {
-	// Registered clients
-	Clients map[string]map[*Client]bool
-
-	// Inbound messages from the clients
-	Broadcast chan Message
-
-	// Register requests from the clients
-	Subscribe chan *Client
-
-	// Unrequest requests from the clients
-	Unsubscribe chan *Client
+type RoomManager interface {
+	Add(user, room string)
+	Del(user string)
+	GetUsers(room string) []string
+	GetRooms(user string) []string
 }
 
-// NewRoom returns a reference to a room
-func NewRoom() *Room {
-	return &Room{
-		Broadcast:   make(chan Message),
-		Subscribe:   make(chan *Client),
-		Unsubscribe: make(chan *Client),
-		Clients:     make(map[string]map[*Client]bool),
+type R string
+type U string
+
+type RoomManagerImpl struct {
+	store map[interface{}]map[interface{}]struct{}
+}
+
+func NewRoomManager() *RoomManagerImpl {
+	return &RoomManagerImpl{
+		store: make(map[interface{}]map[interface{}]struct{}),
 	}
 }
 
-// Join adds a new client to a room
-func (r *Room) Join(c *Client) {
-	clients := r.Clients[c.Room]
-	if clients == nil {
-		clients := make(map[*Client]bool)
-		r.Clients[c.Room] = clients
-	}
-	r.Clients[c.Room][c] = true
+func (r *RoomManagerImpl) Add(user, room string) {
+	r.add(R(room), U(user))
+	r.add(U(user), R(room))
 }
 
-// Quit removes a client from a room
-func (r *Room) Quit(c *Client) {
-	clients := r.Clients[c.Room]
-	if clients != nil {
-		if _, ok := clients[c]; ok {
-			delete(clients, c)
-			close(c.Send)
-			if len(clients) == 0 {
-				delete(r.Clients, c.Room)
-			}
+func (r *RoomManagerImpl) add(a, b interface{}) {
+	if _, found := r.store[a]; !found {
+		r.store[a] = make(map[interface{}]struct{})
+	}
+	r.store[a][b] = struct{}{}
+}
+
+func (r *RoomManagerImpl) Del(user string) {
+	u := U(user)
+	for room := range r.store[u] {
+		delete(r.store[room], u)
+		if len(r.store[room]) == 0 {
+			delete(r.store, room)
 		}
 	}
+	delete(r.store, u)
 }
 
-// Emit will broadcast the message to a room
-func (r *Room) Emit(msg Message) {
-	clients := r.Clients[msg.Room]
-
-	// Perform business logic for handling different messages here
-	for c := range clients {
-		select {
-		case c.Send <- msg:
-		default:
-			r.Quit(c)
-		}
+func (r *RoomManagerImpl) GetUsers(room string) []string {
+	var result []string
+	users, found := r.store[R(room)]
+	if !found {
+		return result
 	}
+	for u := range users {
+		result = append(result, string(u.(U)))
+	}
+	return result
 }
 
-// Run will initialize the room and the corresponding channels
-func (r *Room) Run() {
-	for {
-		select {
-		case c := <-r.Subscribe:
-			r.Join(c)
-		case c := <-r.Unsubscribe:
-			r.Quit(c)
-		case m := <-r.Broadcast:
-			r.Emit(m)
-		default:
-		}
+func (r *RoomManagerImpl) GetRooms(user string) []string {
+	var result []string
+	rooms, found := r.store[U(user)]
+	if !found {
+		return result
 	}
+	for v := range rooms {
+		result = append(result, string(v.(R)))
+	}
+	return result
 }
