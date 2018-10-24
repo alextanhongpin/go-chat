@@ -2,6 +2,7 @@ package database
 
 import "github.com/alextanhongpin/go-chat/entity"
 
+// CreateRoom create a new room.
 func (c *Conn) CreateRoom(users ...string) error {
 	tx, err := c.db.Begin()
 
@@ -27,6 +28,7 @@ func (c *Conn) CreateRoom(users ...string) error {
 	return tx.Commit()
 }
 
+// GetRoom returns the roomID for the given userID.
 func (c *Conn) GetRoom(userID string) ([]int64, error) {
 	rows, err := c.db.Query("SELECT (room_id) FROM user_room WHERE user_id = ?", userID)
 	if err != nil {
@@ -45,7 +47,9 @@ func (c *Conn) GetRoom(userID string) ([]int64, error) {
 	return result, nil
 }
 
+// GetRooms returns a list of user in the room.
 func (c *Conn) GetRooms(userID string) ([]entity.UserRoom, error) {
+	// TODO: Try benchmarking SELECT * FROM user_room WHERE room_id IN (SELECT room_id FROM user_room WHERE user_id = ?)
 	stmt := `SELECT l.user_id, l.room_id FROM user_room l LEFT JOIN user_room r ON l.room_id = r.room_id WHERE r.user_id = ? AND r.user_id != l.user_id`
 	rows, err := c.db.Query(stmt, userID)
 	if err != nil {

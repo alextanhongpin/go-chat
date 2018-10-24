@@ -1,7 +1,5 @@
 package database
 
-type Conversation struct{}
-
 func (c *Conn) CreateConversationReply(userID, roomID string, text string) (int64, error) {
 	stmt, err := c.db.Prepare("INSERT INTO conversation (user_id, room_id, text) VALUES (?, ?, ?)")
 	if err != nil {

@@ -17,13 +17,12 @@ var (
 // https://github.com/gorilla/websocket/issues/46
 
 type Message struct {
-	Data  string `json:"data"`
-	Room  string `json:"room"`
-	Token string `json:"token"`
-	Type  string `json:"type"`
-	To    string `json:"to"`
-	From  string `json:"from"`
-	user  string
+	Data interface{} `json:"data"`
+	Room string      `json:"room"`
+	Type string      `json:"type"`
+	To   string      `json:"to"`
+	From string      `json:"from"`
+	user string
 }
 
 var upgrader = websocket.Upgrader{
@@ -60,9 +59,6 @@ func (s *Server) Close() {
 
 // Broadcast sends a message to a client.
 func (s *Server) Broadcast(to string, msg Message) error {
-	// switch msg.Type {
-	//         case
-	// }
 	if client, found := s.clients[to]; found {
 		if err := client.WriteJSON(msg); err != nil {
 			log.Printf("error: %v\n", err)
@@ -88,8 +84,11 @@ func (s *Server) eventloop() {
 			switch msg.Type {
 			case "status":
 				// Data is the user_id that we want to check the status of.
-				log.Println("got status", msg)
-				_, found := s.clients[msg.Data]
+				user, ok := (msg.Data).(string)
+				if !ok {
+					continue
+				}
+				_, found := s.clients[user]
 				data := "0"
 				if found {
 					data = "1"
@@ -98,7 +97,7 @@ func (s *Server) eventloop() {
 					Data: data,
 					Type: "status",
 					Room: msg.Room,
-					From: msg.Data,
+					From: user,
 				})
 			case "presence":
 				clients := s.rooms.GetUsers(msg.Room)
@@ -110,14 +109,17 @@ func (s *Server) eventloop() {
 					// users have many friends. Fanout operation.
 					s.Broadcast(peer, msg)
 				}
-			default:
-				log.Println("server: receive msg", msg)
+			case "message":
 				s.rooms.Add(msg.user, msg.Room)
 
 				// Store the conversation in a database. It
 				// might be a better idea to use a queue rather
 				// than writing directly to the datastore.
-				_, err := s.db.CreateConversationReply(msg.user, msg.Room, msg.Data)
+				text, ok := (msg.Data).(string)
+				if !ok {
+					continue
+				}
+				_, err := s.db.CreateConversationReply(msg.user, msg.Room, text)
 				if err != nil {
 					log.Printf("error: conversation create error, %v\n", err)
 					continue
@@ -133,6 +135,8 @@ func (s *Server) eventloop() {
 					// users have many friends. Fanout operation.
 					s.Broadcast(peer, msg)
 				}
+			default:
+				log.Printf("message type %s not supported\n", msg.Type)
 			}
 		}
 	}
@@ -166,7 +170,6 @@ func (s *Server) ServeWS(machine ticket.Dispenser, db database.UserRepository) h
 			http.Error(w, err.Error(), http.StatusForbidden)
 			return
 		}
-		log.Println("got user id", u)
 
 		user := strconv.Itoa(u.ID)
 		// From here, we can get the top15 ranked friends and add them into the list.
@@ -180,52 +183,14 @@ func (s *Server) ServeWS(machine ticket.Dispenser, db database.UserRepository) h
 
 		// Add client to the session.
 		s.clients[user] = ws
-		cleanup := func() {
-			log.Println("server: remove session", user)
-			// Remove client from the session.
-			delete(s.clients, user)
+		defer delete(s.clients, user)
 
-			// Remove client from the listening peers.
-			log.Println("server: delete relationships", user)
+		// Notify other user in the room that the user went online.
+		s.online(user)
+		defer s.offline(user)
 
-			// Notify other users that the user went offline.
-			rooms := s.rooms.GetRooms(user)
-			for _, room := range rooms {
-				msg := Message{
-					Room: room,
-					// Data: fmt.Sprintf("%s went offline", user),
-					Data: "0",
-					Type: "presence",
-				}
-				s.broadcast <- msg
-			}
-			s.rooms.Del(user)
-		}
-		defer cleanup()
-
-		// Notify other party that this user is online.
-		rooms, err := s.db.GetRoom(user)
-		if err == nil {
-			log.Println("adding users into room")
-			for _, r := range rooms {
-				room := strconv.Itoa(int(r))
-				s.rooms.Add(user, room)
-				msg := Message{
-					Room: room,
-					// Data: fmt.Sprintf("%s went online", user),
-					Data: "1",
-					From: user,
-					Type: "presence",
-				}
-				s.broadcast <- msg
-			}
-		}
-
-		// Read messages.
 		ws.SetReadLimit(maxMessageSize)
-
 		for {
-			// Override the decision here.
 			var msg Message
 			msg.user = user
 			if err := ws.ReadJSON(&msg); err != nil {
@@ -237,4 +202,39 @@ func (s *Server) ServeWS(machine ticket.Dispenser, db database.UserRepository) h
 			s.broadcast <- msg
 		}
 	}
+}
+
+func (s *Server) online(user string) error {
+	rooms, err := s.db.GetRoom(user)
+	if err != nil {
+		return err
+	}
+	for _, room := range rooms {
+		roomID := strconv.FormatInt(room, 10)
+
+		// Notify other users in the room that the user went online.
+		s.broadcast <- Message{
+			Type: "presence",
+			Room: roomID,
+			Data: 1,
+		}
+
+		// Add user to the room after broadcasting to the room - to
+		// avoid notifying oneself.
+		s.rooms.Add(user, roomID)
+	}
+	return nil
+}
+
+func (s *Server) offline(user string) {
+	rooms := s.rooms.GetRooms(user)
+	for _, room := range rooms {
+		msg := Message{
+			Type: "presence",
+			Room: room,
+			Data: 0,
+		}
+		s.broadcast <- msg
+	}
+	s.rooms.Del(user)
 }

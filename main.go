@@ -38,18 +38,15 @@ func main() {
 
 	ticketMachine := ticket.NewMachine([]byte(jwtSecret), jwtIssuer, 5*time.Minute)
 
-	mux := http.NewServeMux()
-	mux.Handle("/", http.FileServer(http.Dir("./public")))
-	// mux.HandleFunc("/ws", cs.ServeWS())
 	s := server.New(db)
 	defer s.Close()
+
+	mux := http.NewServeMux()
+	mux.Handle("/", http.FileServer(http.Dir("./public")))
 
 	mux.HandleFunc("/ws", s.ServeWS(ticketMachine, db))
 	mux.HandleFunc("/auth", handleAuth(ticketMachine, db))
 	mux.HandleFunc("/rooms", handleGetRooms(db))
-
-	// mux.HandleFunc("/chat-histories", handleHistory)
-	// go checkGoroutine()
 
 	log.Printf("listening to port *%s. press ctrl + c to cancel.\n", port)
 	log.Fatal(http.ListenAndServe(port, mux))
@@ -57,9 +54,6 @@ func main() {
 
 func handleAuth(machine ticket.Dispenser, db database.UserRepository) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Query user from the database based on the Authorization Bearer Token provided
-		// Use the user_id obtained to create a new "Ticket" for the websocket
-
 		if r.Method != http.MethodPost {
 			http.Error(w, "invalid method", http.StatusMethodNotAllowed)
 			return

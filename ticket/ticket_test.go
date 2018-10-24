@@ -19,7 +19,6 @@ func TestNewTicket(t *testing.T) {
 	}
 }
 func TestExpireTicket(t *testing.T) {
-
 	tic := New("abc123", 1*time.Second)
 	ticketStr, err := Sign(tic)
 	if err != nil {
