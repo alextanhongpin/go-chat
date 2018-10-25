@@ -4,8 +4,25 @@
 
 **Functional requirements:**
 
-- users can have private chat with another user 
-- users can have group chat
+- system should allow users to have a private conversation
+- system should allow users to have a group conversation
+- system should not expose the user identifier
+- system should notify users in group when member is online
+- system should notify users in group when member is offline
+- system should notify users when message is read
+- system should display count of unread messages
+- system should mark messages as read
+- system should allow only authenticated users to chat
+
+**Non-functional requirements**
+
+- system should be reliable (messages should be stored)
+- system should be available (users should not be disconnected)
+
+**Extended requirements**
+- system should handle validation on the messages sent to avoid spam
+- system should allow users to block unwanted chat requests
+- system should send notification when user is not online
 
 ## Questions
 
@@ -223,11 +240,25 @@ room 2: {user A, user C}
 
 User A belongs to room 1 and room2. When user A join the chat server, user A will be automatically added into all the rooms, and the other user will be notified of the existence of user A (presence indicator). When user A exits/disconnect from the chat server, we will first remove user A from each room, notify the other party, and then remove user A. 
 
+## Creating a new room
+
+Users can create a new `room` or `group`, but only when they initiate a new conversation (must have at least one message). Else, it would be redundant to create a `group` as it will only consume unnecessary storage.
+
 ## Presence Indicator
 
-To detect if the user is online, we can use redis key and set the status to be online every t duration, and set the key to expire at t + n duration. 
+To detect if the user is online, we can use redis key and set the status to be online every t duration, and set the key to expire at t + n duration. We have to utilise both `pull` and `push` method to detect the presence. `Push` model will notify other users when a user join or leave a group. However, they cannot notify users that are not online. Hence, a `pull` method is required to enquire the status of a particular user. We can have an `active` or `passive` `pull` model, by either pinging the server continuosly or just asking the server once when interacting with a particular user.
+
+The status of the user should be stored in a distributed cache like redis, so that scaling is easier and the calls can be made by other means (API calls).
+
+# Miscelleanous
+
+- Each tab will create a new WebSocket connection. If we need to create only a single shared connection across different tabs, it is possible to do so with SharedWorker or BroadcastChannel API. 
+- There are several ways to perform authentication, one is to use good ol' cookie, another is to use a ticker server.
+- Checkout Server Side Events for read-only events 
+
 
 ## References
 - https://www.thepolyglotdeveloper.com/2016/12/create-real-time-chat-app-golang-angular-2-websockets/
 - https://devcenter.heroku.com/articles/go-websockets
 - https://www.jonathan-petitcolas.com/2015/01/27/playing-with-websockets-in-go.html
+- https://blog.arnellebalane.com/sending-data-across-different-browser-tabs-6225daac93ec
