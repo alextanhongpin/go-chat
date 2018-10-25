@@ -49,9 +49,9 @@ func (c *Conn) GetRoom(userID string) ([]int64, error) {
 
 // GetRooms returns a list of user in the room.
 func (c *Conn) GetRooms(userID string) ([]entity.UserRoom, error) {
-	// TODO: Try benchmarking SELECT * FROM user_room WHERE room_id IN (SELECT room_id FROM user_room WHERE user_id = ?)
-	stmt := `SELECT l.user_id, l.room_id FROM user_room l LEFT JOIN user_room r ON l.room_id = r.room_id WHERE r.user_id = ? AND r.user_id != l.user_id`
-	rows, err := c.db.Query(stmt, userID)
+	stmt := `select user_id, room_id, name from (select a.user_id, a.room_id from user_room a, user_room b where a.room_id = b.room_id and a.user_id != ? and b.user_id = ?) l inner join user r on l.user_id = r.id`
+
+	rows, err := c.db.Query(stmt, userID, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -60,7 +60,7 @@ func (c *Conn) GetRooms(userID string) ([]entity.UserRoom, error) {
 	var result []entity.UserRoom
 	for rows.Next() {
 		var userRoom entity.UserRoom
-		err := rows.Scan(&userRoom.UserID, &userRoom.RoomID)
+		err := rows.Scan(&userRoom.UserID, &userRoom.RoomID, &userRoom.Name)
 		if err != nil {
 			return nil, err
 		}

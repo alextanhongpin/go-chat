@@ -15,12 +15,6 @@ import (
 	"github.com/alextanhongpin/go-chat/ticket"
 )
 
-const (
-	port         = ":4000"
-	redisPort    = ":6379"
-	redisChannel = "chat"
-)
-
 func main() {
 	var (
 		dbUser    = os.Getenv("DB_USER")
@@ -28,6 +22,7 @@ func main() {
 		dbName    = os.Getenv("DB_NAME")
 		jwtSecret = os.Getenv("JWT_SECRET")
 		jwtIssuer = os.Getenv("JWT_ISSUER")
+		port      = ":4000"
 	)
 
 	db, err := database.New(dbUser, dbPass, dbName)

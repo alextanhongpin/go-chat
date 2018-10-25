@@ -42,7 +42,6 @@
 
 			socket.onopen = async () => {
 				let rooms = await fetchRooms(user)
-				console.log('fetchRooms complete', rooms)
 				this.rooms = rooms
 				console.log('socket opened')
 			}
@@ -118,7 +117,8 @@
           
           // Create a new element.
           const $room = document.createElement('chat-room')
-          $room.user = room.user_id
+          // $room.user = room.user_id
+          $room.user = room.name
           $room.room = room.room_id
           $room.timestamp = new Date().toISOString()
           $rooms.appendChild($room)
@@ -195,7 +195,6 @@
 		let user_id = mapUserToId[user]
 		const response = await window.fetch(`/rooms?user_id=${user_id}`)
 		const { data } = await response.json()
-		console.log('found data', data)
 		return data || []
 	}
 })()
