@@ -1,12 +1,76 @@
 (function() {
+  let mapUserToId = {
+    john: 1,
+    jane: 2
+  }
 	let template = document.createElement('template')
 	template.innerHTML = `
 		<style>
+      :host {
+        contain: content;
+        all: initial;
+        font-family: Avenir, arial;
+      }
+      .app {
+        display: grid;
+        grid-template-columns: 320px 1fr;
+        grid-column-gap: 10px;
+      }
+      .chat {
+        width: 320px;
+        height: 480px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, .15);
+        border-radius: 7px;
+        overflow: hidden;
+
+        display: grid;
+        grid-template-rows: 30px 1fr 40px;
+        grid-template-columns: 1fr;
+        justify-content: space-around;
+      }
+      .header {
+        background: #4488FF;
+        min-height: 30px;
+        line-height: 30px;
+        color: white;
+        padding: 0 10px;
+      }
+      .footer {
+        min-height: 40px;
+        line-height: 40px;
+      }
+      .search {
+        width: 100%;
+        border: 1px solid #DDDDDD;
+        border-radius: 0 0 7px 7px;
+        -webkit-appearance: none;
+        height: 40px;
+        padding: 0 10px;
+      }
+      .dialog.is-active {
+        background: #4488FF;
+        color: white;
+      }
 		
 		</style>
-		<div class='rooms'>
-			...loading	
-		</div>
+    <div class='app'>
+      <div class='chat'>
+        <div class='header'>
+          chat 
+        </div>
+        <div class='rooms'></div>
+        <div class='footer'>
+          <input class='search' type='text' placeholder='Search user'/>
+        </div>
+      </div>
+      <div>
+        <div class='dialogs'>
+          <div class='placeholder'>No messages yet</div> 
+        </div>
+        <input class='input-message' type='text' placeholder='Enter message'/>
+        <button class='send'>Send</button>
+      </div>
+    </div>
 	`
 
 	class ChatApp extends HTMLElement {
@@ -20,7 +84,8 @@
 				user: '',
 				rooms: [],
 				roomsCache: new WeakMap(),
-				socket: null
+				socket: null,
+        room: null, // The selected room
 			}
 		}
 
@@ -40,6 +105,10 @@
 				socket.send(JSON.stringify(msg))
 			}
 
+			this.socket = socket
+      this.user = `${mapUserToId[user]}`
+			// this.user = user
+
 			socket.onopen = async () => {
 				let rooms = await fetchRooms(user)
 				this.rooms = rooms
@@ -48,8 +117,8 @@
 
 			socket.onmessage = (evt) => {
 				try {
-					let msg= JSON.parse(evt.data)
-					console.log('receive message:', msg)
+					let msg = JSON.parse(evt.data)
+					console.log('receive message:', msg, this.state.user)
 					switch (msg.type) {
 						case 'status':
 						{
@@ -70,16 +139,37 @@
 							}
 						}
 						case 'message':
-						default:
-							console.log(msg)
+              if (`${this.state.room}`=== msg.room) {
+                const isOwnself = `${this.state.user}`=== msg.from
+                let $dialogs = this.shadowRoot.querySelector('.dialogs')
+                let row = document.createElement('div')
+                row.classList.add('dialog')
+                !isOwnself && row.classList.add('is-active')
+                row.textContent = msg.data
+                $dialogs.appendChild(row)
+              }
+              console.log(msg)
+              break
+            default:
 					}
 				} catch (error) {
 					console.error(error)
 				}
 			}
 
-			this.socket = socket
-			this.user = user
+
+      this.shadowRoot.querySelector('.send').addEventListener('click', (evt) => {
+        let $input = this.shadowRoot.querySelector('.input-message')
+        if (!$input.value.trim().length) {
+          return
+        }
+        send({
+          room: `${this.state.room}`,
+          data: $input.value,
+          type: 'message',
+        })
+        $input.value = ''
+      })
 		}
 
 		set user (value) {
@@ -89,6 +179,10 @@
 		set socket(value) {
 			this.state.socket = value
 		}
+
+    set room(value) {
+      this.state.room = value
+    }
 
 		set rooms(rooms) {
 			// Diff!
@@ -120,6 +214,10 @@
           // $room.user = room.user_id
           $room.user = room.name
           $room.room = room.room_id
+          $room.selected = nextState.length === 1
+          if (nextState.length === 1) {
+            this.room = room.room_id
+          }
           $room.timestamp = new Date().toISOString()
           $rooms.appendChild($room)
           this.state.roomsCache.set(room, $room)
@@ -136,32 +234,6 @@
       })
 
       this.state.rooms = nextState
-
-			// console.log('found rooms', $rooms, rooms)
-      //
-			// let set = new WeakSet()
-			// // Add all the new room.
-			// rooms.forEach(room => {
-			//   let exist = this.state.roomsCache.has(room)
-			//   let $room = exist
-			//     ? this.state.roomsCache.get(room)
-			//     : document.createElement('chat-room')
-			//   $room.user = room.user_id
-			//   $room.room = room.room_id
-			//
-			//   !exist && $rooms.appendChild($room)
-			//   !exist && this.state.roomsCache.set(room, $room)
-			//   set.add(room)
-			// })
-			// // For each old room, remove them from the view.
-			// prevState.forEach(room => {
-			//   if (!set.has(room) && this.state.roomsCache.has(room)) {
-			//     const $room = this.state.roomsCache.get(room)
-			//     $room.remove()
-			//   }
-			// })
-			// set = null
-      //
 		}
 
 		attributeChangedCallback(attrName, oldValue, newValue) {
@@ -188,10 +260,6 @@
 	}
 
 	async function fetchRooms(user) {
-		let mapUserToId = {
-			john: 1,
-			jane: 2
-		}
 		let user_id = mapUserToId[user]
 		const response = await window.fetch(`/rooms?user_id=${user_id}`)
 		const { data } = await response.json()

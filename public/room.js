@@ -3,24 +3,64 @@
 	template.innerHTML = `
 		<style>
 			:host {
-        all: initial;
+        all: inherit;
 				contain: content;
 			}	
+
+      .group {
+        display: grid;
+        grid-template-columns: 30px 1fr 60px;
+        grid-column-gap: 5px;
+        justify-content: center;
+        align-items: center;
+
+        min-height: 60px;
+      }
+      .group:hover,
+      .group.is-selected {
+        background: #EEEEEE;
+        cursor: pointer;
+      }
+
+      .group:not(:last-child) {
+        border-bottom: 1px solid grey;
+      }
+
       .status {
         background: #999999;
-        height: 8px;
-        width: 8px;
+        height: 10px;
+        width: 10px;
         display: inline-block;
         border-radius: 50%;
+        justify-self: center;
       }
       .status.is-online {
         background: #4caf50;
       }
+
+      .user {
+        font-weight: bold;
+        display: block;
+      }
+      .message {
+        color: #444444;
+        font-size: 14px;
+        display: block;
+      }
+
+      .timestamp {
+        color: #444444;
+        font-size: 14px;
+        text-align: center;
+      }
 		</style>
-		<div>
-			<span class='status'></span>
-			<span class='user'></span>
-			<span class='ts'></span>
+		<div class='group'>
+			<div class='status'></div>
+			<div class='info'>
+        <div class='user'></div>
+        <div class='message'>No message</div>
+      </div>
+			<div class='timestamp'></div>
 		</div>
 	`
 
@@ -37,7 +77,8 @@
 				status: false,
 				room: null,
 				timestamp: null,
-				user: null
+				user: null,
+        selected: false
 			}
 		}
 
@@ -57,8 +98,8 @@
 
 		set timestamp(value) {
 			this.state.timestamp = value
-			let $ts = this.shadowRoot.querySelector('.ts')
-			$ts.textContent = new Date(value).toISOString()
+			let $timestamp = this.shadowRoot.querySelector('.timestamp')
+			$timestamp.textContent = timeDifference(Date.now(), new Date(value))
 		}
 		
 		get timestamp() {
@@ -75,10 +116,46 @@
 			this.state.room = value 
 		}
 
+    set selected (value) {
+      this.state.selected = value
+      let $group = this.shadowRoot.querySelector('.group')
+      value 
+        ? $group.classList.add('is-selected')
+        : $group.classList.remove('is-selected')
+    }
+
 		attributeChangedCallback(attrName, oldValue, newValue) {
 
 		}
 	}
 
 	window.customElements.define('chat-room', ChatRoom)
+
+  function timeDifference(current, previous) {
+
+      var msPerMinute = 60 * 1000;
+      var msPerHour = msPerMinute * 60;
+      var msPerDay = msPerHour * 24;
+      var msPerMonth = msPerDay * 30;
+      var msPerYear = msPerDay * 365;
+
+      var elapsed = current - previous;
+
+      if (elapsed < msPerMinute) {
+           return Math.round(elapsed/1000) + 's ago';   
+      }
+
+      else if (elapsed < msPerHour) {
+           return Math.round(elapsed/msPerMinute) + 'm ago';   
+      }
+
+      else if (elapsed < msPerDay ) {
+           return Math.round(elapsed/msPerHour ) + 'h ago';   
+      }
+
+      else if (elapsed < msPerMonth) {
+          return Math.round(elapsed/msPerDay) + 'days ago';   
+      }
+
+  }
 })()

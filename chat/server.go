@@ -208,6 +208,8 @@ func (s *Server) ServeWS(machine ticket.Dispenser, db database.UserRepository) h
 		for {
 			var msg Message
 			msg.user = user
+			// TODO: Hash the id.
+			msg.From = user
 			if err := ws.ReadJSON(&msg); err != nil {
 				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
 					log.Printf("error: %v, user-agent: %v", err, r.Header.Get("User-Agent"))
