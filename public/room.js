@@ -106,6 +106,12 @@
 			return this.state.timestamp
 		}
 
+    set message(value) {
+      this.state.message = value
+      let $message = this.shadowRoot.querySelector('.message')
+      $message.textContent = value
+    }
+
 		set user (value) {
 			this.state.user = value
 			let $user = this.shadowRoot.querySelector('.user')
@@ -133,13 +139,12 @@
 
   function timeDifference(current, previous) {
 
-      var msPerMinute = 60 * 1000;
-      var msPerHour = msPerMinute * 60;
-      var msPerDay = msPerHour * 24;
-      var msPerMonth = msPerDay * 30;
-      var msPerYear = msPerDay * 365;
-
-      var elapsed = current - previous;
+      let msPerMinute = 60 * 1000;
+      let msPerHour = msPerMinute * 60;
+      let msPerDay = msPerHour * 24;
+      let msPerMonth = msPerDay * 30;
+      let msPerYear = msPerDay * 365;
+      let elapsed = current - previous;
 
       if (elapsed < msPerMinute) {
            return Math.round(elapsed/1000) + 's ago';   

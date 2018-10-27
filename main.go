@@ -1,11 +1,12 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
 	"os"
-	"strconv"
+	"strings"
 	"time"
 
 	"github.com/alextanhongpin/go-chat/chat"
@@ -41,10 +42,42 @@ func main() {
 
 	mux.HandleFunc("/ws", s.ServeWS(ticketMachine, db))
 	mux.HandleFunc("/auth", handleAuth(ticketMachine, db))
-	mux.HandleFunc("/rooms", handleGetRooms(db))
+	mux.HandleFunc("/rooms", authMiddleware(ticketMachine)(handleGetRooms(db)))
 
 	log.Printf("listening to port *%s. press ctrl + c to cancel.\n", port)
 	log.Fatal(http.ListenAndServe(port, mux))
+}
+
+type middleware func(http.HandlerFunc) http.HandlerFunc
+
+func authMiddleware(dispenser ticket.Dispenser) middleware {
+	return func(next http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+
+			auth := r.Header.Get("Authorization")
+			if values := strings.Split(auth, " "); len(values) != 2 {
+				http.Error(w, "missing authorization header", http.StatusUnauthorized)
+				return
+			} else {
+				bearer, token := values[0], values[1]
+				if bearer != "Bearer" {
+					http.Error(w, "invalid bearer type", http.StatusUnauthorized)
+					return
+				}
+				userID, err := dispenser.Verify(token)
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusUnauthorized)
+					return
+				}
+				ctx := r.Context()
+				ctx = context.WithValue(ctx, entity.ContextKey("user_id"), userID)
+				r = r.WithContext(ctx)
+
+			}
+
+			next.ServeHTTP(w, r)
+		}
+	}
 }
 
 func handleAuth(machine ticket.Dispenser, db database.UserRepository) http.HandlerFunc {
@@ -65,8 +98,10 @@ func handleAuth(machine ticket.Dispenser, db database.UserRepository) http.Handl
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		log.Printf("got user by name: %#v", user)
+
 		// Create new ticket.
-		ticket := machine.New(strconv.Itoa(user.ID))
+		ticket := machine.New(user.ID)
 
 		// Sign ticket.
 		token, err := machine.Sign(ticket)
@@ -92,7 +127,14 @@ type authResponse struct {
 
 func handleGetRooms(db repository.Room) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		userID := r.URL.Query().Get("user_id")
+		ctx := r.Context()
+		userIDContext := ctx.Value(entity.ContextKey("user_id"))
+		if userIDContext == nil {
+			http.Error(w, "invalid user id", http.StatusBadRequest)
+			return
+		}
+		userID := userIDContext.(string)
+		log.Println("getting rooms", userID)
 		if userID == "" {
 			http.Error(w, "invalid user id", http.StatusBadRequest)
 			return

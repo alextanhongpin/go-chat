@@ -9,4 +9,7 @@ type UserCache interface {
 	GetUsers(room string) []string
 	GetRooms(user string) []string
 	RemoveUser(user string) error
+
+	Set(key, value string) error
+	Get(key string) (string, error)
 }

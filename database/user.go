@@ -1,7 +1,7 @@
 package database
 
 type User struct {
-	ID   int
+	ID   string
 	Name string
 }
 
@@ -10,20 +10,18 @@ type UserRepository interface {
 	GetUserByName(name string) (User, error)
 }
 
-func (c *Conn) GetUser(id string) (User, error) {
-	var user User
-	err := c.db.QueryRow("SELECT * FROM user WHERE id = ?", id).Scan(
+func (c *Conn) GetUser(id string) (user User, err error) {
+	err = c.db.QueryRow("SELECT * FROM user WHERE id = ?", id).Scan(
 		&user.ID,
 		&user.Name,
 	)
-	return user, err
+	return
 }
 
-func (c *Conn) GetUserByName(name string) (User, error) {
-	var user User
-	err := c.db.QueryRow("SELECT * FROM user WHERE name = ?", name).Scan(
+func (c *Conn) GetUserByName(name string) (user User, err error) {
+	err = c.db.QueryRow("SELECT * FROM user WHERE name = ?", name).Scan(
 		&user.ID,
 		&user.Name,
 	)
-	return user, err
+	return
 }

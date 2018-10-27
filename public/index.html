@@ -2,14 +2,13 @@
 <html>
 	<head>
 		<title>Example</title>
-
-		<!-- Putting in script will not load the custom elements in time -->
-		<link rel='import' href='./app.html'/>
-		<link rel='import' href='./room.html'/>
 	</head>
 	<body>
 		<h1>Go Chat</h1>
 
+		<script src='app.js'></script>
+		<script src='dialog.js'></script>
+		<script src='room.js'></script>
 		<chat-app socket_uri='ws://localhost:4000/ws'/>
 	</body>
 </html>

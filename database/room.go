@@ -1,6 +1,10 @@
 package database
 
-import "github.com/alextanhongpin/go-chat/entity"
+import (
+	"log"
+
+	"github.com/alextanhongpin/go-chat/entity"
+)
 
 // CreateRoom create a new room.
 func (c *Conn) CreateRoom(users ...string) error {
@@ -29,27 +33,28 @@ func (c *Conn) CreateRoom(users ...string) error {
 }
 
 // GetRoom returns the roomID for the given userID.
-func (c *Conn) GetRoom(userID string) ([]int64, error) {
+func (c *Conn) GetRoom(userID string) ([]string, error) {
 	rows, err := c.db.Query("SELECT (room_id) FROM user_room WHERE user_id = ?", userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var result []int64
+	var result []string
 	for rows.Next() {
-		var i int64
-		err := rows.Scan(&i)
+		var s string
+		err := rows.Scan(&s)
 		if err != nil {
 			return nil, err
 		}
-		result = append(result, i)
+		result = append(result, s)
 	}
 	return result, nil
 }
 
 // GetRooms returns a list of user in the room.
 func (c *Conn) GetRooms(userID string) ([]entity.UserRoom, error) {
-	stmt := `select user_id, room_id, name from (select a.user_id, a.room_id from user_room a, user_room b where a.room_id = b.room_id and a.user_id != ? and b.user_id = ?) l inner join user r on l.user_id = r.id`
+	log.Println("getting rooms", userID)
+	stmt := `SELECT user_id, room_id, name FROM (SELECT user_id, room_id FROM user_room WHERE room_id IN (SELECT room_id FROM user_room WHERE user_id = ?) AND user_id <> ?) a INNER JOIN user b ON b.id = a.user_id`
 
 	rows, err := c.db.Query(stmt, userID, userID)
 	if err != nil {

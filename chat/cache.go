@@ -20,6 +20,14 @@ func NewCache() *Cache {
 	return &Cache{client: client}
 }
 
+func (c *Cache) Set(key, value string) error {
+	return c.client.Set(key, value, 0).Err()
+}
+
+func (c *Cache) Get(key string) (string, error) {
+	return c.client.Get(key).Result()
+}
+
 func (c *Cache) SetUser(key, value string, duration time.Duration) error {
 	_, err := c.client.SetNX(key, value, duration).Result()
 	return err

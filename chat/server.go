@@ -3,7 +3,6 @@ package chat
 import (
 	"log"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/alextanhongpin/go-chat/database"
@@ -36,9 +35,9 @@ type Message struct {
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
-	CheckOrigin: func(r *http.Request) bool {
-		return true
-	},
+	// CheckOrigin: func(r *http.Request) bool {
+	//         return r.Header.Get("Origin") != "http://"+r.Host
+	// },
 }
 
 type Server struct {
@@ -55,8 +54,7 @@ func New(db *database.Conn) *Server {
 		broadcast: make(chan Message),
 		clients:   make(map[string]*websocket.Conn),
 		quit:      make(chan struct{}),
-		// rooms:     NewRoomManager(), // TODO: Add bloom filter (?).
-		db: db,
+		db:        db,
 	}
 
 	go s.eventloop()
@@ -101,6 +99,23 @@ func (s *Server) eventloop() {
 			return
 		case msg := <-s.broadcast:
 			switch msg.Type {
+			case "is_typing":
+				err := s.Broadcast(msg.To, Message{
+					// Data: msg.user,
+					Room: msg.Room,
+					Type: msg.Type,
+				})
+				if err != nil {
+					log.Println("authError:", err)
+				}
+			case "auth":
+				err := s.Broadcast(msg.user, Message{
+					Data: msg.user,
+					Type: msg.Type,
+				})
+				if err != nil {
+					log.Println("authError:", err)
+				}
 			case "status":
 				// Data is the user_id that we want to check the status of.
 				user := msg.Data
@@ -117,13 +132,13 @@ func (s *Server) eventloop() {
 				})
 			case "presence":
 				clients := s.cache.GetUsers(msg.Room)
-				// clients := s.rooms.GetUsers(msg.Room)
 
 				// Send only to clients in the particular room.
 				for _, peer := range clients {
 					log.Println("server: broadcasting message to peer", peer, msg)
-					// This could be executed in a goroutine if the
-					// users have many friends. Fanout operation.
+					// This could be executed in a
+					// goroutine if the users have many
+					// friends. Fanout operation.
 					s.Broadcast(peer, msg)
 				}
 			case "message":
@@ -165,12 +180,6 @@ func (s *Server) ServeWS(machine ticket.Dispenser, db database.UserRepository) h
 			return
 		}
 
-		// We can also perform checking of origin here.
-		if r.Header.Get("Origin") != "http://"+r.Host {
-			http.Error(w, "Origin not allowed", http.StatusForbidden)
-			return
-		}
-
 		// We can get the querystring parameter from the websocket
 		// endpoint. This might be useful for validating parameters.
 		token := r.URL.Query().Get("token")
@@ -180,13 +189,14 @@ func (s *Server) ServeWS(machine ticket.Dispenser, db database.UserRepository) h
 			return
 		}
 
-		u, err := db.GetUser(userID)
-		if err != nil || u.ID == 0 {
+		user, err := db.GetUser(userID)
+		if err != nil {
 			http.Error(w, err.Error(), http.StatusForbidden)
 			return
 		}
 
-		user := strconv.Itoa(u.ID)
+		// Get the hashed ID
+		// user := u.ID
 		// From here, we can get the top15 ranked friends and add them into the list.
 		ws, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
@@ -196,26 +206,26 @@ func (s *Server) ServeWS(machine ticket.Dispenser, db database.UserRepository) h
 		// Make sure we close the connection when the function returns.
 		defer ws.Close()
 
+		log.Println("authenticated", user.ID)
 		// Add client to the session.
-		s.clients[user] = ws
-		defer delete(s.clients, user)
+		s.clients[user.ID] = ws
+		defer delete(s.clients, user.ID)
 
 		// Notify other user in the room that the user went online.
-		s.online(user)
-		defer s.offline(user)
+		s.online(user.ID)
+		defer s.offline(user.ID)
 
 		ws.SetReadLimit(maxMessageSize)
 		for {
 			var msg Message
-			msg.user = user
-			// TODO: Hash the id.
-			msg.From = user
 			if err := ws.ReadJSON(&msg); err != nil {
 				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
 					log.Printf("error: %v, user-agent: %v", err, r.Header.Get("User-Agent"))
 				}
 				return
 			}
+			msg.From = user.ID
+			msg.user = user.ID
 			s.broadcast <- msg
 		}
 	}
@@ -227,25 +237,22 @@ func (s *Server) online(user string) error {
 		return err
 	}
 	for _, room := range rooms {
-		roomID := strconv.FormatInt(room, 10)
 
 		// Notify other users in the room that the user went online.
 		s.broadcast <- Message{
 			Type: "presence",
-			Room: roomID,
+			Room: room,
 			Data: "1",
 		}
 
 		// Add user to the room after broadcasting to the room - to
 		// avoid notifying oneself.
-		// s.rooms.Add(user, roomID)
-		s.cache.AddUser(user, roomID)
+		s.cache.AddUser(user, room)
 	}
 	return nil
 }
 
 func (s *Server) offline(user string) {
-	// rooms := s.rooms.GetRooms(user)
 	rooms := s.cache.GetRooms(user)
 	for _, room := range rooms {
 		msg := Message{
@@ -255,6 +262,5 @@ func (s *Server) offline(user string) {
 		}
 		s.broadcast <- msg
 	}
-	// s.rooms.Del(user)
 	s.cache.RemoveUser(user)
 }

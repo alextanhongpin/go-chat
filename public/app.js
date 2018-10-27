@@ -86,69 +86,87 @@
 				roomsCache: new WeakMap(),
 				socket: null,
         room: null, // The selected room
+        isTyping: false,
+        isTypingInterval: null,
+        chattingWith: ''
 			}
 		}
 
 		async connectedCallback() {
-			// if (!this.hasAttribute('socket_uri'))
-      //   console.error('attribute "socket_uri" required')
-			//   return
+      if (!this.hasAttribute('socket_uri')) {
+        console.error('attribute "socket_uri" required')
+        return
+      }
 
 			// Perform authentication to obtain a token first
 			// before connecting to the websocket server.
 			let socketUri = this.getAttribute('socket_uri')
 			let user = window.prompt('enter username')
 			let token = await authenticate(user)
-      console.log('authenticated', user)
 			let socket = new window.WebSocket(`${socketUri}?token=${token}`)
 			let send = (msg) => {
 				socket.send(JSON.stringify(msg))
 			}
 
 			this.socket = socket
-      this.user = `${mapUserToId[user]}`
-			// this.user = user
 
 			socket.onopen = async () => {
-				let rooms = await fetchRooms(user)
+        send({ type: 'auth' })
+
+				let rooms = await fetchRooms(user, token)
 				this.rooms = rooms
-				console.log('socket opened')
 			}
 
 			socket.onmessage = (evt) => {
 				try {
 					let msg = JSON.parse(evt.data)
-					console.log('receive message:', msg, this.state.user)
 					switch (msg.type) {
+            case 'is_typing':
+						{
+							let [room] = this.state.rooms.filter(room => room.room_id === msg.room)
+							if (room && this.state.roomsCache.has(room)) {
+								let $room = this.state.roomsCache.get(room)
+                $room.message = 'x is typing' 
+                window.setTimeout(() => {
+                  $room.message = ''
+                }, 2000)
+							}
+              break
+						}
+            case 'auth':
+              {
+                this.user = msg.data
+                break
+              }
 						case 'status':
 						{
-							let [room] = this.state.rooms.filter(room => room.room_id === parseInt(msg.room, 10))
+							let [room] = this.state.rooms.filter(room => room.room_id === msg.room)
 							if (room && this.state.roomsCache.has(room)) {
 								let $room = this.state.roomsCache.get(room)
 								$room.status = msg.data === '1'
 								$room.timestamp = new Date()
 							}
+              break
 						}
 						case 'presence':
 						{
-							let [room] = this.state.rooms.filter(room => room.room_id === parseInt(msg.room, 10))
+							let [room] = this.state.rooms.filter(room => room.room_id === msg.room)
 							if (room && this.state.roomsCache.has(room)) {
 								let $room = this.state.roomsCache.get(room)
 								$room.status = msg.data === '1'
 								$room.timestamp = new Date()
 							}
+              break
 						}
 						case 'message':
-              if (`${this.state.room}`=== msg.room) {
-                const isOwnself = `${this.state.user}`=== msg.from
+              if (this.state.room === msg.room) {
+                const isSelf = this.state.user === msg.from 
                 let $dialogs = this.shadowRoot.querySelector('.dialogs')
-                let row = document.createElement('div')
-                row.classList.add('dialog')
-                !isOwnself && row.classList.add('is-active')
-                row.textContent = msg.data
-                $dialogs.appendChild(row)
+                let $dialog = document.createElement('chat-dialog')
+                $dialog.isSelf = isSelf
+                $dialog.message = msg.data
+                $dialogs.appendChild($dialog)
               }
-              console.log(msg)
               break
             default:
 					}
@@ -169,6 +187,22 @@
           type: 'message',
         })
         $input.value = ''
+      })
+
+      this.shadowRoot.querySelector('.input-message').addEventListener('keyup', (evt) => {
+        if (this.state.isTyping) {
+          return
+        }
+        send({
+          type: 'is_typing',
+          room: this.state.room,
+          to: this.state.chattingWith
+        })
+        this.state.isTyping = true
+        window.clearTimeout(this.state.isTyping)
+        this.state.isTypingInterval = window.setTimeout(() => {
+          this.state.isTyping = false
+        }, 1000)
       })
 		}
 
@@ -197,16 +231,13 @@
       let nextState = []
       for (let room of prevState) {
         if (!currStateSet.has(room)) {
-          console.log('removed')
           this.state.roomsCache.remove(room)
         } else {
-          console.log('existed')
           nextState.push(room)
         }
       }
       for (let room of currState) {
         if (!prevStateSet.has(room)) {
-          console.log('added')
           nextState.push(room)
           
           // Create a new element.
@@ -217,6 +248,7 @@
           $room.selected = nextState.length === 1
           if (nextState.length === 1) {
             this.room = room.room_id
+            this.state.chattingWith = room.user_id
           }
           $room.timestamp = new Date().toISOString()
           $rooms.appendChild($room)
@@ -225,7 +257,6 @@
       }
 
       nextState.forEach(({ user_id: user, room_id: room })=> {
-        console.log('enquiring status', user)
         return this.state.socket.send(JSON.stringify({
           type: 'status',
           data: `${user}`,
@@ -244,7 +275,6 @@
 		}
 
 		render () {
-			console.log('rendering components')
 		}
 	}
 
@@ -259,9 +289,18 @@
 		return token
 	}
 
-	async function fetchRooms(user) {
-		let user_id = mapUserToId[user]
-		const response = await window.fetch(`/rooms?user_id=${user_id}`)
+	async function fetchRooms(user, token) {
+    const response = await window.fetch('/rooms', {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    })
+    if (!response.ok) {
+      const msg = await response.text()
+      console.error(msg)
+      return []
+    }
 		const { data } = await response.json()
 		return data || []
 	}

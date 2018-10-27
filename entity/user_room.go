@@ -1,7 +1,7 @@
 package entity
 
 type UserRoom struct {
-	RoomID int    `json:"room_id"`
-	UserID int    `json:"user_id"`
+	RoomID string `json:"room_id"`
+	UserID string `json:"user_id"`
 	Name   string `json:"name,omitempty"`
 }
