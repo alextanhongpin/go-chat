@@ -109,7 +109,6 @@
 
       // Utility method for sending JSON through websocket.
       let send = (msg) => {
-        console.log('sending', msg)
         socket.send(JSON.stringify(msg))
       }
 
@@ -125,14 +124,14 @@
 
         // For each room, fetch the last 10 conversations.
         let promises = rooms
-          .map(({room_id}) => room_id)
+          .map(({ room_id }) => room_id)
           .map(roomId => fetchConversations(roomId, token))
         let conversations = await Promise.all(promises)
         // let results = conversations.reduce((acc, { room, data }) => {
         //   acc[room] = data
         //   return acc
         // }, {})
-        this.conversations = conversations 
+        this.conversations = conversations
       }
 
       socket.onmessage = (evt) => {
@@ -160,7 +159,7 @@
                 // This ensure that the last conversations will always be retrieved.
                 let conversations = this.state.conversations.get(roomId)
                 let last = conversations[conversations.length - 1]
-                $room.message = last.text 
+                $room.message = last.text
               }, 2000)
               break
             }
@@ -211,10 +210,10 @@
                   isNew = true
                   conversations = []
                   this.state.conversations.set(msg.room, conversations)
-                  console.log('conversation does not exist', msg.room)
+
                   return
                 }
-                console.log('adding conversations', conversations)
+
                 let newMessage = {
                   user_id: msg.from,
                   text: msg.data,
@@ -285,8 +284,7 @@
     }
 
     set conversations (items) {
-      for (let {data, room: roomId} of items) {
-        console.log('conversation', data)
+      for (let { data, room: roomId } of items) {
         // Set the conversations.
         this.state.conversations.set(roomId, data)
 
@@ -307,7 +305,7 @@
         this.renderDialogs(data)
       }
     }
-    renderDialogs(conversations = []) {
+    renderDialogs (conversations = []) {
       let $dialogs = this.shadowRoot.querySelector('.dialogs')
       // Reset the view.
       $dialogs.innerHTML = ''
@@ -315,10 +313,10 @@
       // Sort in ascending order. The newest message will be last.
       conversations.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
       conversations.forEach((conversation) => {
-        let isSelf = this.state.user === conversation.user_id 
+        let isSelf = this.state.user === conversation.user_id
         let $dialog = document.createElement('chat-dialog')
         $dialog.isSelf = isSelf
-        $dialog.message = conversation.text 
+        $dialog.message = conversation.text
         $dialogs.appendChild($dialog)
       })
     }
@@ -334,7 +332,7 @@
           this.state.$rooms.remove(prevState.get(prev))
         }
       }
-  
+
       for (let room of rooms) {
         if (!prevState.has(room.room_id)) {
           const $room = document.createElement('chat-room')
@@ -344,9 +342,9 @@
           $room.timestamp = new Date().toISOString()
 
           $room.addEventListener('select-group', (evt) => {
-            this.room = evt.detail.room() 
-            this.state.chattingWith = evt.detail.user() 
-            console.log(this.state.conversations.get(this.room))
+            this.room = evt.detail.room()
+            this.state.chattingWith = evt.detail.user()
+
             this.renderDialogs(this.state.conversations.get(this.room))
           })
 
@@ -368,18 +366,21 @@
         $room.selected = true
         this.room = room.room_id
         this.state.chattingWith = room.user_id
-        console.log('choose chat', room)
       }
     }
   }
 
   window.customElements.define('chat-app', ChatApp)
 
-  async function authenticate (user_id) {
+  async function authenticate (user) {
     const response = await window.fetch('/auth', {
       method: 'POST',
-      body: JSON.stringify({ user_id })
+      body: JSON.stringify({ user_id: user })
     })
+    if (!response.ok) {
+      console.error(await response.text())
+      return
+    }
     const { token } = await response.json()
     return token
   }
@@ -401,7 +402,7 @@
   }
 
   async function fetchConversations (room, token) {
-    const response = await window.fetch(`/conversations?room_id=${room}`, {
+    const response = await window.fetch(`/conversations/${room}`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${token}`
@@ -415,19 +416,5 @@
     // const { data, room } = await response.json()
     // return data || []
     return response.json()
-  }
-
-  function diff ({prevState, nextState, onRemove, onAdd}) {
-    // let nextState = new Set(nextValue.map(i => i.id))
-    for (let prev of prevState.keys()) {
-      if (!nextState.has(prev)) {
-        onRemove && onRemove(prev, prevState.get(prev))
-      }
-    }
-    for (let next of nextState) {
-      if (!prevState.has(next.id)) {
-        onAdd && onAdd(next.id, next)
-      }
-    }
   }
 })()

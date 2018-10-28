@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -157,8 +158,15 @@ type getRoomsResponse struct {
 }
 
 func handleGetConversations(db repository.Conversation) http.HandlerFunc {
+	pattern := regexp.MustCompile(`^\/conversations\/([\w+])\/?$`)
+	// res := r.FindStringSubmatch("/users/1")
 	return func(w http.ResponseWriter, r *http.Request) {
-		roomID := r.URL.Query().Get("room_id")
+		submatches := pattern.FindStringSubmatch(r.URL.Path)
+		if submatches == nil {
+			http.Error(w, "room_id is required", http.StatusBadRequest)
+			return
+		}
+		roomID := submatches[1]
 		conversations, err := db.GetConversations(roomID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)

@@ -67,21 +67,14 @@
       }
     }
 
-    connectedCallback () {
-      console.log('connected chat-dialog')
-      console.log(this.state)
-    }
-
     set message (value) {
       this.state.message = value
-      console.log('setting message', value)
 
       let $message = this.shadowRoot.querySelector('.message')
       $message.textContent = value
     }
 
     set isSelf (value) {
-      console.log('setting message', value)
       this.state.isSelf = value
       let $dialog = this.shadowRoot.querySelector('.dialog')
       value
@@ -90,6 +83,5 @@
     }
   }
 
-  console.log('defined chat-dialog')
   window.customElements.define('chat-dialog', ChatDialog)
 })()

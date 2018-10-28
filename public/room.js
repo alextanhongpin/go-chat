@@ -86,11 +86,10 @@
     connectedCallback () {
       let $group = this.shadowRoot.querySelector('.group')
       $group.addEventListener('click', (evt) => {
-        console.log('clicked!', this.state)
         let customEvent = new CustomEvent('select-group', {
           detail: {
-            room:() => this.room,
-            user:() => this.userId
+            room: () => this.room,
+            user: () => this.userId
           }
         })
         this.dispatchEvent(customEvent, { bubbles: true, composed: true })
