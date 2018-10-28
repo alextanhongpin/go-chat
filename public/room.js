@@ -78,12 +78,23 @@
         room: null,
         timestamp: null,
         user: null,
+        userId: null,
         selected: false
       }
     }
 
     connectedCallback () {
-
+      let $group = this.shadowRoot.querySelector('.group')
+      $group.addEventListener('click', (evt) => {
+        console.log('clicked!', this.state)
+        let customEvent = new CustomEvent('select-group', {
+          detail: {
+            room:() => this.room,
+            user:() => this.userId
+          }
+        })
+        this.dispatchEvent(customEvent, { bubbles: true, composed: true })
+      })
     }
 
     set status (value) {
@@ -122,8 +133,24 @@
       $user.textContent = value
     }
 
+    set userId (value) {
+      this.state.userId = value
+    }
+
+    get userId () {
+      return this.state.userId
+    }
+
+    get user () {
+      return this.state.user
+    }
+
     set room (value) {
       this.state.room = value
+    }
+
+    get room () {
+      return this.state.room
     }
 
     set selected (value) {

@@ -12,7 +12,7 @@ type Ticket struct {
 	jwt.StandardClaims
 }
 
-type Machine struct {
+type DispenserImpl struct {
 	secret   []byte
 	issuer   string
 	duration time.Duration
@@ -24,19 +24,19 @@ type Dispenser interface {
 	New(id string) Ticket
 }
 
-func NewMachine(secret []byte, issuer string, duration time.Duration) Machine {
-	return Machine{
+func NewDispenser(secret []byte, issuer string, duration time.Duration) DispenserImpl {
+	return DispenserImpl{
 		secret:   secret,
 		issuer:   issuer,
 		duration: duration,
 	}
 }
 
-func (t Machine) Sign(ticket Ticket) (string, error) {
+func (t DispenserImpl) Sign(ticket Ticket) (string, error) {
 	return sign(t.secret, ticket)
 }
 
-func (t Machine) Verify(rawTicket string) (string, error) {
+func (t DispenserImpl) Verify(rawTicket string) (string, error) {
 	claims, err := verify(t.secret, rawTicket)
 	if err != nil {
 		return "", err
@@ -44,7 +44,7 @@ func (t Machine) Verify(rawTicket string) (string, error) {
 	return claims.ID, nil
 }
 
-func (t Machine) New(id string) Ticket {
+func (t DispenserImpl) New(id string) Ticket {
 	return new(t.issuer, id, t.duration)
 }
 

@@ -8,6 +8,7 @@ import (
 	"github.com/alextanhongpin/go-chat/database"
 	"github.com/alextanhongpin/go-chat/repository"
 	"github.com/alextanhongpin/go-chat/ticket"
+
 	"github.com/gorilla/websocket"
 )
 
@@ -17,6 +18,12 @@ var (
 
 	// Maximum message size allowed from peer
 	maxMessageSize int64 = 512
+
+	// Time allowed to read the next pong message from the peer.
+	pongWait = 60 * time.Second
+
+	// Send pings to peer with this period. Must be less than pongWait.
+	pingPeriod = (pongWait * 9) / 10
 )
 
 // https://github.com/gorilla/websocket/issues/46
@@ -27,7 +34,7 @@ type Message struct {
 	Type string `json:"type,omitempty"`
 	// To and From value can be hashed for security purpose. Create another
 	// lookup table to map the values back to the original id.
-	To   string `json:"to,omitempty"`
+	// To   string `json:"to,omitempty"`
 	From string `json:"from,omitempty"`
 	user string
 }
@@ -49,9 +56,10 @@ type Server struct {
 }
 
 func New(db *database.Conn) *Server {
+	defaultBroadcastQueueSize := 10000
 	s := Server{
 		cache:     NewCache(),
-		broadcast: make(chan Message),
+		broadcast: make(chan Message, defaultBroadcastQueueSize),
 		clients:   make(map[string]*websocket.Conn),
 		quit:      make(chan struct{}),
 		db:        db,
@@ -70,12 +78,7 @@ func (s *Server) Close() {
 // Broadcast sends a message to a client.
 func (s *Server) Broadcast(to string, msg Message) error {
 	if client, found := s.clients[to]; found {
-		err := client.SetWriteDeadline(time.Now().Add(writeWait))
-		if err != nil {
-			client.Close()
-			s.cache.RemoveUser(to)
-			return err
-		}
+		client.SetWriteDeadline(time.Now().Add(writeWait))
 		if err := client.WriteJSON(msg); err != nil {
 			log.Printf("error: %v\n", err)
 			// If the delivery fails, remove the client from the
@@ -99,24 +102,20 @@ func (s *Server) eventloop() {
 			return
 		case msg := <-s.broadcast:
 			switch msg.Type {
-			case "is_typing":
-				err := s.Broadcast(msg.To, Message{
-					// Data: msg.user,
-					Room: msg.Room,
+			case TypeTyping:
+				err := s.Broadcast(msg.Data, msg)
+				if err != nil {
+					log.Println("typingError:", err)
+				}
+			case TypeAuth:
+				err := s.Broadcast(msg.From, Message{
+					Data: msg.From,
 					Type: msg.Type,
 				})
 				if err != nil {
 					log.Println("authError:", err)
 				}
-			case "auth":
-				err := s.Broadcast(msg.user, Message{
-					Data: msg.user,
-					Type: msg.Type,
-				})
-				if err != nil {
-					log.Println("authError:", err)
-				}
-			case "status":
+			case TypeStatus:
 				// Data is the user_id that we want to check the status of.
 				user := msg.Data
 				_, found := s.clients[user]
@@ -124,13 +123,13 @@ func (s *Server) eventloop() {
 				if found {
 					data = "1"
 				}
-				s.Broadcast(msg.user, Message{
+				s.Broadcast(msg.From, Message{
 					Data: data,
 					Type: "status",
 					Room: msg.Room,
-					From: user,
+					// From: user,
 				})
-			case "presence":
+			case TypePresence:
 				clients := s.cache.GetUsers(msg.Room)
 
 				// Send only to clients in the particular room.
@@ -141,14 +140,14 @@ func (s *Server) eventloop() {
 					// friends. Fanout operation.
 					s.Broadcast(peer, msg)
 				}
-			case "message":
+			case TypeMessage:
 				// s.rooms.Add(msg.user, msg.Room)
-				s.cache.AddUser(msg.user, msg.Room)
+				s.cache.AddUser(msg.From, msg.Room)
 
 				// Store the conversation in a database. It
 				// might be a better idea to use a queue rather
 				// than writing directly to the datastore.
-				_, err := s.db.CreateConversationReply(msg.user, msg.Room, msg.Data)
+				_, err := s.db.CreateConversationReply(msg.From, msg.Room, msg.Data)
 				if err != nil {
 					log.Printf("error: conversation create error, %v\n", err)
 					continue
@@ -172,7 +171,7 @@ func (s *Server) eventloop() {
 	}
 }
 
-func (s *Server) ServeWS(machine ticket.Dispenser, db database.UserRepository) http.HandlerFunc {
+func (s *Server) ServeWS(dispenser ticket.Dispenser, db database.UserRepository) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// WebSocket is a httpGet only endpoint.
 		if r.Method != http.MethodGet {
@@ -180,24 +179,20 @@ func (s *Server) ServeWS(machine ticket.Dispenser, db database.UserRepository) h
 			return
 		}
 
-		// We can get the querystring parameter from the websocket
-		// endpoint. This might be useful for validating parameters.
 		token := r.URL.Query().Get("token")
-		userID, err := machine.Verify(token)
+		userID, err := dispenser.Verify(token)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
+		// Check if the user exists in the database.
 		user, err := db.GetUser(userID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusForbidden)
 			return
 		}
 
-		// Get the hashed ID
-		// user := u.ID
-		// From here, we can get the top15 ranked friends and add them into the list.
 		ws, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -206,7 +201,6 @@ func (s *Server) ServeWS(machine ticket.Dispenser, db database.UserRepository) h
 		// Make sure we close the connection when the function returns.
 		defer ws.Close()
 
-		log.Println("authenticated", user.ID)
 		// Add client to the session.
 		s.clients[user.ID] = ws
 		defer delete(s.clients, user.ID)
@@ -216,6 +210,12 @@ func (s *Server) ServeWS(machine ticket.Dispenser, db database.UserRepository) h
 		defer s.offline(user.ID)
 
 		ws.SetReadLimit(maxMessageSize)
+		ws.SetReadDeadline(time.Now().Add(pongWait))
+		ws.SetPongHandler(func(string) error {
+			ws.SetReadDeadline(time.Now().Add(pongWait))
+			return nil
+		})
+		go ping(ws)
 		for {
 			var msg Message
 			if err := ws.ReadJSON(&msg); err != nil {
@@ -224,27 +224,45 @@ func (s *Server) ServeWS(machine ticket.Dispenser, db database.UserRepository) h
 				}
 				return
 			}
+			// Every websocket connection is unique - we can safely
+			// inject the user id to the message.
+			// msg.user = user.ID
 			msg.From = user.ID
-			msg.user = user.ID
 			s.broadcast <- msg
 		}
 	}
 }
 
+// writePump pumps messages from the hub to the websocket connection.
+func ping(ws *websocket.Conn) {
+	ticker := time.NewTicker(pingPeriod)
+	defer func() {
+		ticker.Stop()
+		ws.Close()
+	}()
+	for {
+		select {
+		case <-ticker.C:
+			ws.SetWriteDeadline(time.Now().Add(writeWait))
+			if err := ws.WriteMessage(websocket.PingMessage, []byte{}); err != nil {
+				return
+			}
+		}
+	}
+}
 func (s *Server) online(user string) error {
+	// Get the rooms from database that the current user is currently in.
 	rooms, err := s.db.GetRoom(user)
 	if err != nil {
 		return err
 	}
 	for _, room := range rooms {
-
 		// Notify other users in the room that the user went online.
 		s.broadcast <- Message{
-			Type: "presence",
+			Data: StatusOnline,
 			Room: room,
-			Data: "1",
+			Type: TypePresence,
 		}
-
 		// Add user to the room after broadcasting to the room - to
 		// avoid notifying oneself.
 		s.cache.AddUser(user, room)
@@ -253,14 +271,16 @@ func (s *Server) online(user string) error {
 }
 
 func (s *Server) offline(user string) {
+	// Get the rooms from session cache that the current user is currently in.
 	rooms := s.cache.GetRooms(user)
+
+	// For each room, notify other users that the user went offline.
 	for _, room := range rooms {
-		msg := Message{
-			Type: "presence",
+		s.broadcast <- Message{
+			Data: StatusOffline,
 			Room: room,
-			Data: "0",
+			Type: TypePresence,
 		}
-		s.broadcast <- msg
 	}
 	s.cache.RemoveUser(user)
 }

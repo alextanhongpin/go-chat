@@ -32,7 +32,7 @@ func main() {
 	}
 	defer db.Close()
 
-	ticketMachine := ticket.NewMachine([]byte(jwtSecret), jwtIssuer, 5*time.Minute)
+	ticketDispenser := ticket.NewDispenser([]byte(jwtSecret), jwtIssuer, 5*time.Minute)
 
 	s := chat.New(db)
 	defer s.Close()
@@ -40,10 +40,10 @@ func main() {
 	mux := http.NewServeMux()
 	mux.Handle("/", http.FileServer(http.Dir("./public")))
 
-	mux.HandleFunc("/ws", s.ServeWS(ticketMachine, db))
-	mux.HandleFunc("/auth", handleAuth(ticketMachine, db))
-	mux.HandleFunc("/rooms", authMiddleware(ticketMachine)(handleGetRooms(db)))
-	mux.HandleFunc("/conversations", authMiddleware(ticketMachine)(handleGetConversations(db)))
+	mux.HandleFunc("/ws", s.ServeWS(ticketDispenser, db))
+	mux.HandleFunc("/auth", handleAuth(ticketDispenser, db))
+	mux.HandleFunc("/rooms", authMiddleware(ticketDispenser)(handleGetRooms(db)))
+	mux.HandleFunc("/conversations", authMiddleware(ticketDispenser)(handleGetConversations(db)))
 
 	log.Printf("listening to port *%s. press ctrl + c to cancel.\n", port)
 	log.Fatal(http.ListenAndServe(port, mux))
@@ -81,7 +81,7 @@ func authMiddleware(dispenser ticket.Dispenser) middleware {
 	}
 }
 
-func handleAuth(machine ticket.Dispenser, db database.UserRepository) http.HandlerFunc {
+func handleAuth(dispenser ticket.Dispenser, db database.UserRepository) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "invalid method", http.StatusMethodNotAllowed)
@@ -102,10 +102,10 @@ func handleAuth(machine ticket.Dispenser, db database.UserRepository) http.Handl
 		log.Printf("got user by name: %#v", user)
 
 		// Create new ticket.
-		ticket := machine.New(user.ID)
+		ticket := dispenser.New(user.ID)
 
 		// Sign ticket.
-		token, err := machine.Sign(ticket)
+		token, err := dispenser.Sign(ticket)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
