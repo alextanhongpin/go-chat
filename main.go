@@ -43,6 +43,7 @@ func main() {
 	mux.HandleFunc("/ws", s.ServeWS(ticketMachine, db))
 	mux.HandleFunc("/auth", handleAuth(ticketMachine, db))
 	mux.HandleFunc("/rooms", authMiddleware(ticketMachine)(handleGetRooms(db)))
+	mux.HandleFunc("/conversations", authMiddleware(ticketMachine)(handleGetConversations(db)))
 
 	log.Printf("listening to port *%s. press ctrl + c to cancel.\n", port)
 	log.Fatal(http.ListenAndServe(port, mux))
@@ -153,4 +154,24 @@ func handleGetRooms(db repository.Room) http.HandlerFunc {
 
 type getRoomsResponse struct {
 	Data []entity.UserRoom `json:"data"`
+}
+
+func handleGetConversations(db repository.Conversation) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		roomID := r.URL.Query().Get("room_id")
+		conversations, err := db.GetConversations(roomID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		json.NewEncoder(w).Encode(getConversationsResponse{
+			Data: conversations,
+			Room: roomID,
+		})
+	}
+}
+
+type getConversationsResponse struct {
+	Data []entity.Conversation `json:"data"`
+	Room string                `json:"room"`
 }

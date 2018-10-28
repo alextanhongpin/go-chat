@@ -1,6 +1,6 @@
 (function () {
-	let template = document.createElement('template')
-	template.innerHTML = `
+  let template = document.createElement('template')
+  template.innerHTML = `
 		<style>
 			:host {
         all: inherit;
@@ -64,103 +64,99 @@
 		</div>
 	`
 
-	class ChatRoom extends HTMLElement {
-		static get observedAttributes () {
-			return []
-		}
-		constructor() {
-			super()
+  class ChatRoom extends HTMLElement {
+    static get observedAttributes () {
+      return []
+    }
+    constructor () {
+      super()
 
-			this.attachShadow({mode: 'open'})
-			.appendChild(template.content.cloneNode(true))
-			this.state = {
-				status: false,
-				room: null,
-				timestamp: null,
-				user: null,
+      this.attachShadow({ mode: 'open' })
+        .appendChild(template.content.cloneNode(true))
+      this.state = {
+        status: false,
+        room: null,
+        timestamp: null,
+        user: null,
         selected: false
-			}
-		}
+      }
+    }
 
-		connectedCallback() {
+    connectedCallback () {
 
-		}
+    }
 
-		set status (value) {
-			this.state.status = value
-			let $status = this.shadowRoot.querySelector('.status')
-			value ? $status.classList.add('is-online') : $status.classList.remove('is-online')
-		}
+    set status (value) {
+      this.state.status = value
+      let $status = this.shadowRoot.querySelector('.status')
+      value ? $status.classList.add('is-online') : $status.classList.remove('is-online')
+    }
 
-		get status () {
-			return this.state.status
-		}
+    get status () {
+      return this.state.status
+    }
 
-		set timestamp(value) {
-			this.state.timestamp = value
-			let $timestamp = this.shadowRoot.querySelector('.timestamp')
-			$timestamp.textContent = timeDifference(Date.now(), new Date(value))
-		}
-		
-		get timestamp() {
-			return this.state.timestamp
-		}
+    set timestamp (value) {
+      this.state.timestamp = value
+      let $timestamp = this.shadowRoot.querySelector('.timestamp')
+      $timestamp.textContent = timeDifference(Date.now(), new Date(value))
+    }
 
-    set message(value) {
+    get timestamp () {
+      return this.state.timestamp
+    }
+
+    set message (value) {
       this.state.message = value
       let $message = this.shadowRoot.querySelector('.message')
       $message.textContent = value
     }
 
-		set user (value) {
-			this.state.user = value
-			let $user = this.shadowRoot.querySelector('.user')
-			$user.textContent = value
-		}
+    get message () {
+      return this.state.message
+    }
 
-		set room (value) {
-			this.state.room = value 
-		}
+    set user (value) {
+      this.state.user = value
+      let $user = this.shadowRoot.querySelector('.user')
+      $user.textContent = value
+    }
+
+    set room (value) {
+      this.state.room = value
+    }
 
     set selected (value) {
       this.state.selected = value
       let $group = this.shadowRoot.querySelector('.group')
-      value 
+      value
         ? $group.classList.add('is-selected')
         : $group.classList.remove('is-selected')
     }
 
-		attributeChangedCallback(attrName, oldValue, newValue) {
+    attributeChangedCallback (attrName, oldValue, newValue) {
 
-		}
-	}
+    }
+  }
 
-	window.customElements.define('chat-room', ChatRoom)
+  window.customElements.define('chat-room', ChatRoom)
 
-  function timeDifference(current, previous) {
+  function timeDifference (current, previous) {
+    let msPerMinute = 60 * 1000
+    let msPerHour = msPerMinute * 60
+    let msPerDay = msPerHour * 24
+    let msPerMonth = msPerDay * 30
+    let msPerYear = msPerDay * 365
+    let elapsed = current - previous
 
-      let msPerMinute = 60 * 1000;
-      let msPerHour = msPerMinute * 60;
-      let msPerDay = msPerHour * 24;
-      let msPerMonth = msPerDay * 30;
-      let msPerYear = msPerDay * 365;
-      let elapsed = current - previous;
-
-      if (elapsed < msPerMinute) {
-           return Math.round(elapsed/1000) + 's ago';   
-      }
-
-      else if (elapsed < msPerHour) {
-           return Math.round(elapsed/msPerMinute) + 'm ago';   
-      }
-
-      else if (elapsed < msPerDay ) {
-           return Math.round(elapsed/msPerHour ) + 'h ago';   
-      }
-
-      else if (elapsed < msPerMonth) {
-          return Math.round(elapsed/msPerDay) + 'days ago';   
-      }
-
+    if (elapsed < msPerMinute) {
+      return Math.round(elapsed / 1000) + 's ago'
+    } else if (elapsed < msPerHour) {
+      return Math.round(elapsed / msPerMinute) + 'm ago'
+    } else if (elapsed < msPerDay) {
+      return Math.round(elapsed / msPerHour) + 'h ago'
+    } else if (elapsed < msPerMonth) {
+      return Math.round(elapsed / msPerDay) + 'days ago'
+    }
   }
 })()

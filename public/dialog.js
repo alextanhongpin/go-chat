@@ -1,4 +1,4 @@
-(function() {
+(function () {
   let template = document.createElement('template')
   template.innerHTML = `
     <style>
@@ -55,12 +55,11 @@
     </div>
   `
 
-
   class ChatDialog extends HTMLElement {
-    constructor() {
+    constructor () {
       super()
-      this.attachShadow({mode: 'open'})
-      .appendChild(template.content.cloneNode(true))
+      this.attachShadow({ mode: 'open' })
+        .appendChild(template.content.cloneNode(true))
 
       this.state = {
         message: '',
@@ -68,25 +67,24 @@
       }
     }
 
-    connectedCallback() {
+    connectedCallback () {
       console.log('connected chat-dialog')
       console.log(this.state)
-    
     }
 
     set message (value) {
       this.state.message = value
       console.log('setting message', value)
-      
+
       let $message = this.shadowRoot.querySelector('.message')
       $message.textContent = value
     }
 
-    set isSelf(value) {
+    set isSelf (value) {
       console.log('setting message', value)
       this.state.isSelf = value
       let $dialog = this.shadowRoot.querySelector('.dialog')
-      value 
+      value
         ? $dialog.classList.add('is-self')
         : $dialog.classList.remove('is-self')
     }

@@ -14,7 +14,7 @@ type Conn struct {
 
 // New creates a new SQL connection.
 func New(user, pass, name string) (*Conn, error) {
-	connStr := fmt.Sprintf("%s:%s@/%s", user, pass, name)
+	connStr := fmt.Sprintf("%s:%s@/%s?parseTime=true", user, pass, name)
 	db, err := sql.Open("mysql", connStr)
 	if err != nil {
 		return nil, err

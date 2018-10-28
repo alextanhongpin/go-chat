@@ -1,10 +1,6 @@
-(function() {
-  let mapUserToId = {
-    john: 1,
-    jane: 2
-  }
-	let template = document.createElement('template')
-	template.innerHTML = `
+(function () {
+  let template = document.createElement('template')
+  template.innerHTML = `
 		<style>
       :host {
         contain: content;
@@ -73,94 +69,105 @@
     </div>
 	`
 
-	class ChatApp extends HTMLElement {
-		constructor() {
-			super()
-			this.attachShadow({ mode: 'open' })
-				.appendChild(template.content.cloneNode(true))
+  class ChatApp extends HTMLElement {
+    constructor () {
+      super()
+      this.attachShadow({ mode: 'open' })
+        .appendChild(template.content.cloneNode(true))
 
-			this.state = {
-				connected: false,
-				user: '',
-				rooms: [],
-				roomsCache: new WeakMap(),
-				socket: null,
+      this.state = {
+        connected: false,
+        user: '',
+        rooms: [],
+        roomsCache: new WeakMap(),
+        socket: null,
         room: null, // The selected room
         isTyping: false,
         isTypingInterval: null,
-        chattingWith: ''
-			}
-		}
+        chattingWith: '',
+        conversations: {}
+      }
+    }
 
-		async connectedCallback() {
+    async connectedCallback () {
       if (!this.hasAttribute('socket_uri')) {
         console.error('attribute "socket_uri" required')
         return
       }
 
-			// Perform authentication to obtain a token first
-			// before connecting to the websocket server.
-			let socketUri = this.getAttribute('socket_uri')
-			let user = window.prompt('enter username')
-			let token = await authenticate(user)
-			let socket = new window.WebSocket(`${socketUri}?token=${token}`)
-			let send = (msg) => {
-				socket.send(JSON.stringify(msg))
-			}
+      // Perform authentication to obtain a token first
+      // before connecting to the websocket server.
+      let socketUri = this.getAttribute('socket_uri')
+      let user = window.prompt('enter username')
+      let token = await authenticate(user)
+      let socket = new window.WebSocket(`${socketUri}?token=${token}`)
+      let send = (msg) => {
+        socket.send(JSON.stringify(msg))
+      }
 
-			this.socket = socket
+      this.socket = socket
 
-			socket.onopen = async () => {
+      socket.onopen = async () => {
         send({ type: 'auth' })
 
-				let rooms = await fetchRooms(user, token)
-				this.rooms = rooms
-			}
+        let rooms = await fetchRooms(user, token)
+        this.rooms = rooms
 
-			socket.onmessage = (evt) => {
-				try {
-					let msg = JSON.parse(evt.data)
-					switch (msg.type) {
+        let promises = rooms.map(({ room_id }) => room_id).map(roomId => fetchConversations(roomId, token))
+        let conversations = await Promise.all(promises)
+        let results = conversations.reduce((acc, { room, data }) => {
+          acc[room] = data
+          return acc
+        }, {})
+        this.conversations = results
+        // console.log(conversations)
+      }
+
+      socket.onmessage = (evt) => {
+        try {
+          let msg = JSON.parse(evt.data)
+          switch (msg.type) {
             case 'is_typing':
-						{
-							let [room] = this.state.rooms.filter(room => room.room_id === msg.room)
-							if (room && this.state.roomsCache.has(room)) {
-								let $room = this.state.roomsCache.get(room)
-                $room.message = 'x is typing' 
+            {
+              let [room] = this.state.rooms.filter(room => room.room_id === msg.room)
+              if (room && this.state.roomsCache.has(room)) {
+                let $room = this.state.roomsCache.get(room)
+                let prevMessage = $room.message
+                $room.message = `...${room.name} is typing`
                 window.setTimeout(() => {
-                  $room.message = ''
+                  $room.message = prevMessage 
                 }, 2000)
-							}
-              break
-						}
-            case 'auth':
-              {
-                this.user = msg.data
-                break
               }
-						case 'status':
-						{
-							let [room] = this.state.rooms.filter(room => room.room_id === msg.room)
-							if (room && this.state.roomsCache.has(room)) {
-								let $room = this.state.roomsCache.get(room)
-								$room.status = msg.data === '1'
-								$room.timestamp = new Date()
-							}
               break
-						}
-						case 'presence':
-						{
-							let [room] = this.state.rooms.filter(room => room.room_id === msg.room)
-							if (room && this.state.roomsCache.has(room)) {
-								let $room = this.state.roomsCache.get(room)
-								$room.status = msg.data === '1'
-								$room.timestamp = new Date()
-							}
+            }
+            case 'auth':
+            {
+              this.user = msg.data
               break
-						}
-						case 'message':
+            }
+            case 'status':
+            {
+              let [room] = this.state.rooms.filter(room => room.room_id === msg.room)
+              if (room && this.state.roomsCache.has(room)) {
+                let $room = this.state.roomsCache.get(room)
+                $room.status = msg.data === '1'
+                $room.timestamp = new Date()
+              }
+              break
+            }
+            case 'presence':
+            {
+              let [room] = this.state.rooms.filter(room => room.room_id === msg.room)
+              if (room && this.state.roomsCache.has(room)) {
+                let $room = this.state.roomsCache.get(room)
+                $room.status = msg.data === '1'
+                $room.timestamp = new Date()
+              }
+              break
+            }
+            case 'message':
               if (this.state.room === msg.room) {
-                const isSelf = this.state.user === msg.from 
+                const isSelf = this.state.user === msg.from
                 let $dialogs = this.shadowRoot.querySelector('.dialogs')
                 let $dialog = document.createElement('chat-dialog')
                 $dialog.isSelf = isSelf
@@ -169,12 +176,11 @@
               }
               break
             default:
-					}
-				} catch (error) {
-					console.error(error)
-				}
-			}
-
+          }
+        } catch (error) {
+          console.error(error)
+        }
+      }
 
       this.shadowRoot.querySelector('.send').addEventListener('click', (evt) => {
         let $input = this.shadowRoot.querySelector('.input-message')
@@ -184,7 +190,7 @@
         send({
           room: `${this.state.room}`,
           data: $input.value,
-          type: 'message',
+          type: 'message'
         })
         $input.value = ''
       })
@@ -204,25 +210,52 @@
           this.state.isTyping = false
         }, 1000)
       })
-		}
+    }
 
-		set user (value) {
-			this.state.user = value
-		}
+    set user (value) {
+      this.state.user = value
+    }
 
-		set socket(value) {
-			this.state.socket = value
-		}
+    set socket (value) {
+      this.state.socket = value
+    }
 
-    set room(value) {
+    set room (value) {
       this.state.room = value
     }
 
-		set rooms(rooms) {
-			// Diff!
-			let $rooms = this.shadowRoot.querySelector('.rooms')
+    set conversations (value) {
+      this.state.conversations = value
 
-			let prevState = this.state.rooms
+      Object.entries(value).map(([roomId, data]) => {
+        console.log(data)
+        let [room] = this.state.rooms.filter(room => room.room_id === roomId)
+        if (room && this.state.roomsCache.has(room)) {
+          let $room = this.state.roomsCache.get(room)
+          $room.message = data[0].text
+          $room.timestamp = data[0].created_at
+          this.renderDialogs(data)
+        }
+      })
+    }
+    renderDialogs(conversations) {
+      let $dialogs = this.shadowRoot.querySelector('.dialogs')
+
+      // Sort in ascending order. The newest message will be last.
+      conversations.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+      conversations.forEach((conversation) => {
+        let isSelf = this.state.user === conversation.user_id 
+        let $dialog = document.createElement('chat-dialog')
+        $dialog.isSelf = isSelf
+        $dialog.message = conversation.text 
+        $dialogs.appendChild($dialog)
+      })
+    }
+    set rooms (rooms) {
+      // Diff!
+      let $rooms = this.shadowRoot.querySelector('.rooms')
+
+      let prevState = this.state.rooms
       let prevStateSet = new Set(prevState.filter(item => item.room_id))
 
       let currState = rooms
@@ -239,7 +272,7 @@
       for (let room of currState) {
         if (!prevStateSet.has(room)) {
           nextState.push(room)
-          
+
           // Create a new element.
           const $room = document.createElement('chat-room')
           // $room.user = room.user_id
@@ -256,7 +289,7 @@
         }
       }
 
-      nextState.forEach(({ user_id: user, room_id: room })=> {
+      nextState.forEach(({ user_id: user, room_id: room }) => {
         return this.state.socket.send(JSON.stringify({
           type: 'status',
           data: `${user}`,
@@ -265,31 +298,31 @@
       })
 
       this.state.rooms = nextState
-		}
+    }
 
-		attributeChangedCallback(attrName, oldValue, newValue) {
-			switch (attrName) {
-				case 'key':
-					break
-			}
-		}
+    attributeChangedCallback (attrName, oldValue, newValue) {
+      switch (attrName) {
+        case 'key':
+          break
+      }
+    }
 
-		render () {
-		}
-	}
+    render () {
+    }
+  }
 
-	window.customElements.define('chat-app', ChatApp)
+  window.customElements.define('chat-app', ChatApp)
 
-	async function authenticate(user_id) {
-		const response = await window.fetch('/auth', {
-			method: 'POST',
-			body: JSON.stringify({ user_id })
-		})
-		const { token } = await response.json()
-		return token
-	}
+  async function authenticate (user_id) {
+    const response = await window.fetch('/auth', {
+      method: 'POST',
+      body: JSON.stringify({ user_id })
+    })
+    const { token } = await response.json()
+    return token
+  }
 
-	async function fetchRooms(user, token) {
+  async function fetchRooms (user, token) {
     const response = await window.fetch('/rooms', {
       method: 'GET',
       headers: {
@@ -301,7 +334,24 @@
       console.error(msg)
       return []
     }
-		const { data } = await response.json()
-		return data || []
-	}
+    const { data } = await response.json()
+    return data || []
+  }
+
+  async function fetchConversations (room, token) {
+    const response = await window.fetch(`/conversations?room_id=${room}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    })
+    if (!response.ok) {
+      const msg = await response.text()
+      console.error(msg)
+      return []
+    }
+    // const { data, room } = await response.json()
+    // return data || []
+    return response.json()
+  }
 })()
