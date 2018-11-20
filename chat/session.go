@@ -6,6 +6,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// Session treats each socket connection as a new session and holds data.
 type Session struct {
 	mu   sync.RWMutex
 	conn *websocket.Conn
@@ -35,6 +36,20 @@ func (s *Session) Get(key string) interface{} {
 	data := s.data[key]
 	s.mu.RUnlock()
 	return data
+}
+
+func (s *Session) SessionID() string {
+	s.mu.RLock()
+	id := s.id
+	s.mu.RUnlock()
+	return id.String()
+}
+
+func (s *Session) Conn() *websocket.Conn {
+	s.mu.RLock()
+	conn := s.conn
+	s.mu.RUnlock()
+	return conn
 }
 
 // func (s *Session) Save(repo Repository) error {

@@ -1,12 +1,12 @@
 package chat
 
 import (
+	"errors"
 	"log"
 	"net/http"
 	"time"
 
 	"github.com/alextanhongpin/go-chat/database"
-	"github.com/alextanhongpin/go-chat/repository"
 	"github.com/alextanhongpin/go-chat/ticket"
 
 	"github.com/gorilla/websocket"
@@ -28,30 +28,41 @@ var (
 
 // https://github.com/gorilla/websocket/issues/46
 
+// type Message struct {
+//         Data string `json:"data,omitempty"`
+//         Room string `json:"room,omitempty"`
+//         Type string `json:"type,omitempty"`
+//         // To and From value can be hashed for security purpose. Create another
+//         // lookup table to map the values back to the original id.
+//         // To   string `json:"to,omitempty"`
+//         From string `json:"from,omitempty"`
+//         user string
+// }
+
 type Message struct {
-	Data string `json:"data,omitempty"`
-	Room string `json:"room,omitempty"`
-	Type string `json:"type,omitempty"`
-	// To and From value can be hashed for security purpose. Create another
-	// lookup table to map the values back to the original id.
-	// To   string `json:"to,omitempty"`
-	From string `json:"from,omitempty"`
-	user string
+	// The text content of the message.
+	Text string `json:"text"`
+	// Unique ID for the message created.
+	ID string `json:"id"`
+	// The type for client to handle polymorphism.
+	Type      string `json:"type"`
+	Timestamp int64
+	// User might not persist timestamp that long (when messages are loaded from db).
+	// k = HMAC(timestamp,id,msg, sk)
+	// timestamp|id|(msg|sender)k|HMAC(timestamp|id|sender|msg, sk))
+	Hash string
 }
 
 // Envelope wraps the message to hide the details of the sender.
 type Envelope struct {
-	Message struct {
-		// The text content of the message.
-		Text string `json:"text"`
-		// Unique ID for the message created.
-		ID string `json:"id"`
-		// The type for client to handle polymorphism.
-		Type      string `json:"type"`
-		CreatedAt time.Time
-		Hash      string
-	}
-	Sender   string
+	Message Message
+	// The sender of the message. Usually a user id.
+	Sender string
+
+	// The receiver in this case is the room id (chat group), rather than
+	// the user id. This provides better flexibility, as it allows us to
+	// send conversations to more than a person (users in the same group,
+	// rather than just direct message to a single user).
 	Receiver string
 }
 
@@ -63,17 +74,19 @@ var upgrader = websocket.Upgrader{
 	// },
 }
 
-type Server struct {
-	broadcast chan Message
-	clients   map[string]*websocket.Conn
+type Chat struct {
+	broadcast chan Envelope
 	quit      chan struct{}
-	db        *database.Conn
-	cache     repository.UserCache
+	manager   *Manager
+	// clients   map[string]*websocket.Conn
+	// Create another interface for accessing the data.
+	// db        *database.Conn
+	// cache     repository.UserCache
 }
 
-func New(db *database.Conn) *Server {
+func New(db *database.Conn) *Chat {
 	defaultBroadcastQueueSize := 10000
-	s := Server{
+	s := Chat{
 		cache:     NewCache(),
 		broadcast: make(chan Message, defaultBroadcastQueueSize),
 		clients:   make(map[string]*websocket.Conn),
@@ -90,30 +103,28 @@ func New(db *database.Conn) *Server {
 }
 
 // Close terminates the server goroutines gracefully.
-func (s *Server) Close() {
+func (s *Chat) Close() {
 	close(s.quit)
 }
 
 // Broadcast sends a message to a client.
-func (s *Server) Broadcast(to string, msg Message) error {
-	if client, found := s.clients[to]; found {
-		client.SetWriteDeadline(time.Now().Add(writeWait))
-		if err := client.WriteJSON(msg); err != nil {
-			log.Printf("error: %v\n", err)
-			// If the delivery fails, remove the client from the
-			// list.
-			client.Close()
-
-			// Delete all relationships.
-			// s.rooms.Del(to)
-			s.cache.RemoveUser(to)
-			return err
-		}
+func (c *Chat) Broadcast(receiver string, msg Message) error {
+	sess := c.manager.Get(receiver)
+	if sess == nil {
+		return errors.New("receiver not found")
+	}
+	sess.conn.SetWriteDeadline(time.Now().Add(writeWait))
+	err := sess.conn.WriteJSON(msg)
+	if err != nil {
+		sess.conn.Close()
+		c.repository.Remove(receiver)
+		c.manager.Delete(receiver)
+		return err
 	}
 	return nil
 }
 
-func (s *Server) eventloop() {
+func (s *Chat) eventloop() {
 	for {
 		select {
 		case <-s.quit:
@@ -190,7 +201,7 @@ func (s *Server) eventloop() {
 	}
 }
 
-func (s *Server) ServeWS(dispenser ticket.Dispenser, db database.UserRepository) http.HandlerFunc {
+func (s *Chat) ServeWS(dispenser ticket.Dispenser, db database.UserRepository) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// WebSocket is a httpGet only endpoint.
 		if r.Method != http.MethodGet {
@@ -269,37 +280,48 @@ func ping(ws *websocket.Conn) {
 		}
 	}
 }
-func (s *Server) online(user string) error {
+func (s *Chat) online(user string) error {
 	// Get the rooms from database that the current user is currently in.
-	rooms, err := s.db.GetRoom(user)
+	rooms, err := s.repository.GetRoom(user)
 	if err != nil {
 		return err
 	}
 	for _, room := range rooms {
 		// Notify other users in the room that the user went online.
-		s.broadcast <- Message{
-			Data: StatusOnline,
-			Room: room,
+		msg := Message{
+			Text: StatusOnline,
 			Type: TypePresence,
+		}
+		s.broadcast <- Envelope{
+			Sender:   user,
+			Receiver: room,
+			Message:  msg,
 		}
 		// Add user to the room after broadcasting to the room - to
 		// avoid notifying oneself.
-		s.cache.AddUser(user, room)
+		s.repository.Add(user, room)
 	}
 	return nil
 }
 
-func (s *Server) offline(user string) {
+func (c *Chat) offline(user string) {
 	// Get the rooms from session cache that the current user is currently in.
-	rooms := s.cache.GetRooms(user)
-
+	rooms := c.repository.GetRooms(user)
 	// For each room, notify other users that the user went offline.
 	for _, room := range rooms {
-		s.broadcast <- Message{
-			Data: StatusOffline,
-			Room: room,
-			Type: TypePresence,
+		s.broadcast <- Envelope{
+			Sender:   user,
+			Receiver: room,
+			Message: Message{
+				Type: TypePresence,
+				Text: StatusOffline,
+			},
 		}
+		// s.broadcast <- Message{
+		//         Data: StatusOffline,
+		//         Room: room,
+		//         Type: TypePresence,
+		// }
 	}
-	s.cache.RemoveUser(user)
+	c.repository.Remove(user)
 }
