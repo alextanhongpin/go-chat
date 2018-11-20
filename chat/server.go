@@ -39,6 +39,22 @@ type Message struct {
 	user string
 }
 
+// Envelope wraps the message to hide the details of the sender.
+type Envelope struct {
+	Message struct {
+		// The text content of the message.
+		Text string `json:"text"`
+		// Unique ID for the message created.
+		ID string `json:"id"`
+		// The type for client to handle polymorphism.
+		Type      string `json:"type"`
+		CreatedAt time.Time
+		Hash      string
+	}
+	Sender   string
+	Receiver string
+}
+
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
@@ -64,6 +80,9 @@ func New(db *database.Conn) *Server {
 		quit:      make(chan struct{}),
 		db:        db,
 	}
+
+	// Register to pubsub to listen to the server.
+	// os.Hostname()
 
 	go s.eventloop()
 
