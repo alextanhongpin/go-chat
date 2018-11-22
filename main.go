@@ -15,6 +15,7 @@ import (
 	"github.com/alextanhongpin/go-chat/entity"
 	"github.com/alextanhongpin/go-chat/repository"
 	"github.com/alextanhongpin/go-chat/ticket"
+	"github.com/go-redis/redis"
 )
 
 func main() {
@@ -35,7 +36,7 @@ func main() {
 
 	ticketDispenser := ticket.NewDispenser([]byte(jwtSecret), jwtIssuer, 5*time.Minute)
 
-	s := chat.New(db)
+	s := chat.New(db, NewRedis())
 	defer s.Close()
 
 	mux := http.NewServeMux()
@@ -48,6 +49,16 @@ func main() {
 
 	log.Printf("listening to port *%s. press ctrl + c to cancel.\n", port)
 	log.Fatal(http.ListenAndServe(port, mux))
+}
+
+func NewRedis() *redis.Client {
+	client := redis.NewClient(&redis.Options{
+		Addr:     "localhost:6379",
+		Password: "",
+		DB:       0,
+	})
+	// return &Cache{client: client}
+	return client
 }
 
 type middleware func(http.HandlerFunc) http.HandlerFunc

@@ -1,13 +1,13 @@
 package chat
 
 import (
-	"errors"
 	"log"
 	"net/http"
 	"time"
 
 	"github.com/alextanhongpin/go-chat/database"
 	"github.com/alextanhongpin/go-chat/ticket"
+	"github.com/go-redis/redis"
 
 	"github.com/gorilla/websocket"
 )
@@ -26,174 +26,182 @@ var (
 	pingPeriod = (pongWait * 9) / 10
 )
 
-// https://github.com/gorilla/websocket/issues/46
-
-// type Message struct {
-//         Data string `json:"data,omitempty"`
-//         Room string `json:"room,omitempty"`
-//         Type string `json:"type,omitempty"`
-//         // To and From value can be hashed for security purpose. Create another
-//         // lookup table to map the values back to the original id.
-//         // To   string `json:"to,omitempty"`
-//         From string `json:"from,omitempty"`
-//         user string
-// }
-
 type Message struct {
 	// The text content of the message.
 	Text string `json:"text"`
+
 	// Unique ID for the message created.
 	ID string `json:"id"`
+
 	// The type for client to handle polymorphism.
-	Type      string `json:"type"`
-	Timestamp int64
+	Type string `json:"type"`
+
+	Timestamp int64 `json:"timestamp"`
 	// User might not persist timestamp that long (when messages are loaded from db).
 	// k = HMAC(timestamp,id,msg, sk)
 	// timestamp|id|(msg|sender)k|HMAC(timestamp|id|sender|msg, sk))
-	Hash string
-}
+	// Hash string
 
-// Envelope wraps the message to hide the details of the sender.
-type Envelope struct {
-	Message Message
 	// The sender of the message. Usually a user id.
-	Sender string
+	Sender string `json:"sender"`
 
 	// The receiver in this case is the room id (chat group), rather than
 	// the user id. This provides better flexibility, as it allows us to
 	// send conversations to more than a person (users in the same group,
 	// rather than just direct message to a single user).
-	Receiver string
+	Receiver string `json:"receiver"`
 }
 
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
-	// CheckOrigin: func(r *http.Request) bool {
-	//         return r.Header.Get("Origin") != "http://"+r.Host
-	// },
+	CheckOrigin: func(r *http.Request) bool {
+		return true
+		// return r.Header.Get("Origin") != "http://"+r.Host
+	},
 }
 
 type Chat struct {
-	broadcast chan Envelope
+	// broadcast sends the message to a room.
+	broadcast chan Message
 	quit      chan struct{}
-	manager   *Manager
-	// clients   map[string]*websocket.Conn
-	// Create another interface for accessing the data.
-	// db        *database.Conn
-	// cache     repository.UserCache
+
+	// In-memory data structure, fetch from db if it doesn't exist.
+	// Table that maps session id -> session struct. One-to-one.
+	sessions *Sessions
+
+	// Table that maps session id -> user id and vice versa. Many-to-one.
+	lookup Tabler
+	// Table that maps user id -> room ids and vice versa. Many-to-many.
+	rooms Tabler
+	db    *database.Conn
 }
 
-func New(db *database.Conn) *Chat {
+func New(db *database.Conn, client *redis.Client) *Chat {
 	defaultBroadcastQueueSize := 10000
-	s := Chat{
-		cache:     NewCache(),
+	c := Chat{
 		broadcast: make(chan Message, defaultBroadcastQueueSize),
-		clients:   make(map[string]*websocket.Conn),
 		quit:      make(chan struct{}),
+		sessions:  NewSessions(),
+		lookup:    NewTableInMemory(),
+		rooms:     NewTableCache(client),
 		db:        db,
 	}
 
 	// Register to pubsub to listen to the server.
 	// os.Hostname()
 
-	go s.eventloop()
+	go c.eventloop()
 
-	return &s
+	return &c
 }
 
 // Close terminates the server goroutines gracefully.
-func (s *Chat) Close() {
-	close(s.quit)
+func (c *Chat) Close() {
+	// This is preferred, as it will block unlike close.
+	c.quit <- struct{}{}
+	close(c.quit)
 }
 
 // Broadcast sends a message to a client.
-func (c *Chat) Broadcast(receiver string, msg Message) error {
-	sess := c.manager.Get(receiver)
-	if sess == nil {
-		return errors.New("receiver not found")
-	}
-	sess.conn.SetWriteDeadline(time.Now().Add(writeWait))
-	err := sess.conn.WriteJSON(msg)
-	if err != nil {
-		sess.conn.Close()
-		c.repository.Remove(receiver)
-		c.manager.Delete(receiver)
-		return err
+func (c *Chat) Broadcast(msg Message) error {
+	sender, receiver := msg.Sender, msg.Receiver
+
+	// Get the other users in the same room.
+	users := c.rooms.Get(RoomID(receiver))
+	for _, user := range users {
+		// Can skip this, since the user is already removed from the room.
+		if user == sender {
+			continue
+		}
+		// Find the sessions for the user.
+		sessions := c.lookup.Get(UserID(user))
+		for _, sid := range sessions {
+			sess := c.sessions.Get(sid)
+			err := sess.Conn().WriteJSON(msg)
+			if err != nil {
+				// Clear session.
+				c.Clear(sess)
+				return err
+			}
+		}
 	}
 	return nil
 }
 
-func (s *Chat) eventloop() {
+func (c *Chat) eventloop() {
+loop:
 	for {
 		select {
-		case <-s.quit:
+		case <-c.quit:
 			log.Println("server: quit")
-			return
-		case msg := <-s.broadcast:
+			break loop
+		case msg, ok := <-c.broadcast:
+			if !ok {
+				break loop
+			}
 			switch msg.Type {
-			case TypeTyping:
-				err := s.Broadcast(msg.Data, msg)
-				if err != nil {
-					log.Println("typingError:", err)
-				}
-			case TypeAuth:
-				err := s.Broadcast(msg.From, Message{
-					Data: msg.From,
-					Type: msg.Type,
-				})
-				if err != nil {
-					log.Println("authError:", err)
-				}
-			case TypeStatus:
-				// Data is the user_id that we want to check the status of.
-				user := msg.Data
-				_, found := s.clients[user]
-				data := "0"
-				if found {
-					data = "1"
-				}
-				s.Broadcast(msg.From, Message{
-					Data: data,
-					Type: "status",
-					Room: msg.Room,
-					// From: user,
-				})
-			case TypePresence:
-				clients := s.cache.GetUsers(msg.Room)
-
-				// Send only to clients in the particular room.
-				for _, peer := range clients {
-					log.Println("server: broadcasting message to peer", peer, msg)
-					// This could be executed in a
-					// goroutine if the users have many
-					// friends. Fanout operation.
-					s.Broadcast(peer, msg)
-				}
-			case TypeMessage:
-				// s.rooms.Add(msg.user, msg.Room)
-				s.cache.AddUser(msg.From, msg.Room)
-
-				// Store the conversation in a database. It
-				// might be a better idea to use a queue rather
-				// than writing directly to the datastore.
-				_, err := s.db.CreateConversationReply(msg.From, msg.Room, msg.Data)
-				if err != nil {
-					log.Printf("error: conversation create error, %v\n", err)
-					continue
-				}
-
-				// Get the list of peers it can send message to.
-				// clients := s.rooms.GetUsers(msg.Room)
-				clients := s.cache.GetUsers(msg.Room)
-
-				// Send only to clients in the particular room.
-				for _, peer := range clients {
-					log.Println("server: broadcasting message to peer", peer, msg)
-					// This could be executed in a goroutine if the
-					// users have many friends. Fanout operation.
-					s.Broadcast(peer, msg)
-				}
+			// case TypeTyping:
+			// err := s.Broadcast()
+			// if err != nil {
+			//         log.Println("typingError:", err)
+			// }
+			// case TypeAuth:
+			// err := s.Broadcast(msg.From, Message{
+			//         Data: msg.From,
+			//         Type: msg.Type,
+			// })
+			// if err != nil {
+			//         log.Println("authError:", err)
+			// }
+			// case TypeStatus:
+			// Data is the user_id that we want to check the status of.
+			// user := msg.Data
+			// _, found := s.clients[user]
+			// data := "0"
+			// if found {
+			//         data = "1"
+			// }
+			// s.Broadcast(msg.From, Message{
+			//         Data: data,
+			//         Type: "status",
+			//         Room: msg.Room,
+			//         // From: user,
+			// })
+			// case TypePresence:
+			// clients := s.cache.GetUsers(msg.Room)
+			//
+			// // Send only to clients in the particular room.
+			// for _, peer := range clients {
+			//         log.Println("server: broadcasting message to peer", peer, msg)
+			//         // This could be executed in a
+			//         // goroutine if the users have many
+			//         // friends. Fanout operation.
+			//         s.Broadcast(peer, msg)
+			// }
+			// case TypeMessage:
+			// s.cache.AddUser(msg.From, msg.Room)
+			//
+			// // Store the conversation in a database. It
+			// // might be a better idea to use a queue rather
+			// // than writing directly to the datastore.
+			// _, err := s.db.CreateConversationReply(msg.From, msg.Room, msg.Data)
+			// if err != nil {
+			//         log.Printf("error: conversation create error, %v\n", err)
+			//         continue
+			// }
+			//
+			// // Get the list of peers it can send message to.
+			// // clients := s.rooms.GetUsers(msg.Room)
+			// clients := s.cache.GetUsers(msg.Room)
+			//
+			// // Send only to clients in the particular room.
+			// for _, peer := range clients {
+			//         log.Println("server: broadcasting message to peer", peer, msg)
+			//         // This could be executed in a goroutine if the
+			//         // users have many friends. Fanout operation.
+			//         s.Broadcast(peer, msg)
+			// }
 			default:
 				log.Printf("message type %s not supported\n", msg.Type)
 			}
@@ -201,7 +209,42 @@ func (s *Chat) eventloop() {
 	}
 }
 
-func (s *Chat) ServeWS(dispenser ticket.Dispenser, db database.UserRepository) http.HandlerFunc {
+func (c *Chat) newSession(ws *websocket.Conn) *Session {
+	sess := NewSession(ws)
+	c.sessions.Put(sess)
+	return sess
+}
+
+// Bind ties the user id and session id together. One user might have multiple sessions.
+func (c *Chat) Bind(uid UserID, sid SessionID) func() {
+	// TODO: Check if the session already exist. If yes, there is no need to add the
+	// user into the room.
+	// if !c.lookup.Has(uid) {
+	// Connect the user to the room.
+	c.Join(uid)
+	// }
+
+	// Tie the user to the existing session.
+	c.lookup.Add(uid, sid)
+
+	return func() {
+		// Clear the current session that is tied to the user.
+		sessions := c.Get(sid)
+		for _, sess := range sessions {
+			// Clear session table.
+			c.Clear(sess)
+		}
+
+		// If the user does not have any other sessions left, clear the room.
+		// One user can have multiple sessions.
+		if len(c.Get(uid)) == 0 {
+			// Clear rooms. Only if there are no longer any sessions available for that particular user.
+			c.Leave(uid)
+		}
+	}
+}
+
+func (c *Chat) ServeWS(dispenser ticket.Dispenser, db database.UserRepository) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// WebSocket is a httpGet only endpoint.
 		if r.Method != http.MethodGet {
@@ -209,36 +252,42 @@ func (s *Chat) ServeWS(dispenser ticket.Dispenser, db database.UserRepository) h
 			return
 		}
 
-		token := r.URL.Query().Get("token")
-		userID, err := dispenser.Verify(token)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		// Check if the user exists in the database.
-		user, err := db.GetUser(userID)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusForbidden)
-			return
-		}
-
+		// Upgrade the websocket connection.
 		ws, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+
 		// Make sure we close the connection when the function returns.
 		defer ws.Close()
 
-		// Add client to the session.
-		s.clients[user.ID] = ws
-		defer delete(s.clients, user.ID)
+		token := r.URL.Query().Get("token")
+		userID, err := dispenser.Verify(token)
+		if err != nil {
+			ws.WriteMessage(websocket.TextMessage,
+				websocket.FormatCloseMessage(websocket.CloseNormalClosure, "unauthorized"))
+			return
+		}
+
+		// Check if the user exists in the database.
+		_, err = db.GetUser(userID)
+		if err != nil {
+			ws.WriteMessage(websocket.TextMessage,
+				websocket.FormatCloseMessage(websocket.CloseNormalClosure, "unauthorized"))
+			return
+		}
+
+		// Create a new session. Why not create the session together with the user id?
+		// A user can have several sessions (multiple tabs, different devices etc).
+		// We need a way to query the sessions for a particular user.
+		session := c.newSession(ws)
+
+		// Check the db and get the user info, then tie them together.
+		close := c.Bind(UserID(userID), session.SessionID())
+		defer close()
 
 		// Notify other user in the room that the user went online.
-		s.online(user.ID)
-		defer s.offline(user.ID)
-
 		ws.SetReadLimit(maxMessageSize)
 		ws.SetReadDeadline(time.Now().Add(pongWait))
 		ws.SetPongHandler(func(string) error {
@@ -256,9 +305,7 @@ func (s *Chat) ServeWS(dispenser ticket.Dispenser, db database.UserRepository) h
 			}
 			// Every websocket connection is unique - we can safely
 			// inject the user id to the message.
-			// msg.user = user.ID
-			msg.From = user.ID
-			s.broadcast <- msg
+			c.broadcast <- msg
 		}
 	}
 }
@@ -280,48 +327,75 @@ func ping(ws *websocket.Conn) {
 		}
 	}
 }
-func (s *Chat) online(user string) error {
-	// Get the rooms from database that the current user is currently in.
-	rooms, err := s.repository.GetRoom(user)
+
+// Join adds the user to the room.
+func (c *Chat) Join(uid UserID) {
+	log.Printf("%v join the room\n", uid)
+	rooms, err := c.db.GetRooms(string(uid))
 	if err != nil {
-		return err
+		log.Println(err)
 	}
 	for _, room := range rooms {
-		// Notify other users in the room that the user went online.
-		msg := Message{
-			Text: StatusOnline,
-			Type: TypePresence,
+		// Notify other user in the room first, only add the user once the room receive broadcast to avoid notifying oneself.
+		sender, receiver := string(uid), room.RoomID
+
+		// Broadcast to a room.
+		c.broadcast <- Message{
+			Type:     MessageTypeOnline.String(),
+			Sender:   sender,
+			Receiver: receiver,
 		}
-		s.broadcast <- Envelope{
-			Sender:   user,
-			Receiver: room,
-			Message:  msg,
-		}
-		// Add user to the room after broadcasting to the room - to
-		// avoid notifying oneself.
-		s.repository.Add(user, room)
+
+		// Add user to room, and keep track of rooms for user.
+		c.rooms.Add(uid, RoomID(room.RoomID))
 	}
-	return nil
 }
 
-func (c *Chat) offline(user string) {
-	// Get the rooms from session cache that the current user is currently in.
-	rooms := c.repository.GetRooms(user)
-	// For each room, notify other users that the user went offline.
-	for _, room := range rooms {
-		s.broadcast <- Envelope{
-			Sender:   user,
-			Receiver: room,
-			Message: Message{
-				Type: TypePresence,
-				Text: StatusOffline,
-			},
+func (c *Chat) Leave(uid UserID) {
+	log.Printf("%v left the chat\n", uid)
+	// For each room that the user belong to, remove the user.
+	onDelete := func(room string) {
+		sender, receiver := string(uid), room
+		c.broadcast <- Message{
+			Type:     MessageTypeOffline.String(),
+			Sender:   sender,
+			Receiver: receiver,
 		}
-		// s.broadcast <- Message{
-		//         Data: StatusOffline,
-		//         Room: room,
-		//         Type: TypePresence,
-		// }
 	}
-	c.repository.Remove(user)
+	// Delete user -> rooms relationship.
+	c.rooms.Delete(uid, onDelete)
+
+}
+
+func (c *Chat) Clear(sess *Session) {
+	// Closes the connection, and delete the session.
+	sess.Conn().Close()
+	sessionID := sess.SessionID()
+	c.sessions.Delete(string(sessionID))
+}
+
+// One-to-many relationship between sessions and user.
+// One user can have multiple sessions (mobile, browser with multiple tabs etc)
+// Get(UserID) will return a slice of sessions.
+// Get(SessionID) will return one user.
+// To get the session.
+func (c *Chat) Get(key interface{}) []*Session {
+	switch key.(type) {
+	case SessionID:
+		sess := c.sessions.Get(key.(string))
+		return []*Session{sess}
+	case UserID:
+		// If the UserID is provided, get the SessionID first
+		// in order to retrieve the session.
+		// A userID can have multiple sessions (many tabs)
+		sessions := c.lookup.Get(key)
+		result := make([]*Session, len(sessions))
+
+		for i, sess := range sessions {
+			result[i] = c.sessions.Get(sess)
+		}
+		return result
+	default:
+		return nil
+	}
 }
