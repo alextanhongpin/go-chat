@@ -91,6 +91,7 @@ func New(db *database.Conn, client *redis.Client) *Chat {
 	// Register to pubsub to listen to the server.
 	// os.Hostname()
 
+	log.Println("chat: starting event loop")
 	go c.eventloop()
 
 	return &c
@@ -101,27 +102,33 @@ func (c *Chat) Close() {
 	// This is preferred, as it will block unlike close.
 	c.quit <- struct{}{}
 	close(c.quit)
+	log.Println("chat: closing")
 }
 
 // Broadcast sends a message to a client.
 func (c *Chat) Broadcast(msg Message) error {
+	log.Printf("broadcast: got message %#v\n", msg)
 	sender, receiver := msg.Sender, msg.Receiver
 
 	// Get the other users in the same room.
 	users := c.rooms.Get(RoomID(receiver))
+	log.Printf("broadcast: got users %#v\n", users)
 	for _, user := range users {
 		// Can skip this, since the user is already removed from the room.
 		if user == sender {
+			log.Printf("broadcast: skip ownself %#v\n", user)
 			continue
 		}
 		// Find the sessions for the user.
 		sessions := c.lookup.Get(UserID(user))
+		log.Printf("broadcast: got sessions %#v\n", sessions)
 		for _, sid := range sessions {
 			sess := c.sessions.Get(sid)
 			err := sess.Conn().WriteJSON(msg)
 			if err != nil {
 				// Clear session.
 				c.Clear(sess)
+				log.Printf("broadcastError: %v\n", err)
 				return err
 			}
 		}
@@ -140,6 +147,7 @@ loop:
 			if !ok {
 				break loop
 			}
+			c.Broadcast(msg)
 			switch msg.Type {
 			// case TypeTyping:
 			// err := s.Broadcast()
@@ -202,8 +210,8 @@ loop:
 			//         // users have many friends. Fanout operation.
 			//         s.Broadcast(peer, msg)
 			// }
-			default:
-				log.Printf("message type %s not supported\n", msg.Type)
+			// default:
+			// log.Printf("message type %s not supported\n", msg.Type)
 			}
 		}
 	}
@@ -305,6 +313,7 @@ func (c *Chat) ServeWS(dispenser ticket.Dispenser, db database.UserRepository) h
 			}
 			// Every websocket connection is unique - we can safely
 			// inject the user id to the message.
+			msg.Sender = userID
 			c.broadcast <- msg
 		}
 	}
@@ -335,6 +344,7 @@ func (c *Chat) Join(uid UserID) {
 	if err != nil {
 		log.Println(err)
 	}
+	log.Printf("Join: rooms %#v\n", rooms)
 	for _, room := range rooms {
 		// Notify other user in the room first, only add the user once the room receive broadcast to avoid notifying oneself.
 		sender, receiver := string(uid), room.RoomID
@@ -347,8 +357,14 @@ func (c *Chat) Join(uid UserID) {
 		}
 
 		// Add user to room, and keep track of rooms for user.
-		c.rooms.Add(uid, RoomID(room.RoomID))
+		err := c.rooms.Add(uid, RoomID(room.RoomID))
+		if err != nil {
+			log.Printf("JoinError: %v\n", err)
+		}
+		log.Printf("Join: added to rooms %#v\n", room.RoomID)
 	}
+	roomss := c.rooms.Get(uid)
+	log.Printf("Join: get rooms %#v\n", roomss)
 }
 
 func (c *Chat) Leave(uid UserID) {

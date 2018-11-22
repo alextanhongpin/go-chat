@@ -1,6 +1,10 @@
 package chat
 
-import "sync"
+import (
+	"fmt"
+	"log"
+	"sync"
+)
 
 type Table struct {
 	mu   sync.RWMutex
@@ -18,20 +22,26 @@ func NewTableInMemory() *Table {
 
 // Get returns slice string of given item.
 func (t *Table) Get(id interface{}) []string {
+	log.Printf("Table.Get: %#v \n", id)
 	t.mu.RLock()
-	items := t.data[id]
+	items, ok := t.data[id]
 	t.mu.RUnlock()
-
+	if !ok {
+		log.Printf("tableError: %#v\n", id)
+		return []string{}
+	}
 	result := make([]string, len(items))
 	var i int
 	for item := range items {
-		result[i] = item.(string)
+		// result[i] = item.(string)
+		result[i] = fmt.Sprintf("%v", item)
 		i++
 	}
 	return result
 }
 
 func (t *Table) Add(a, b interface{}) error {
+	log.Printf("Table.Add: %#v %#v\n", a, b)
 	// Add the user in the room.
 	t.add(a, b)
 	// Keep track of the rooms the user is in.

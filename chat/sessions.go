@@ -1,6 +1,8 @@
 package chat
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"sync"
 
 	"github.com/gorilla/websocket"
@@ -18,10 +20,19 @@ type Session struct {
 func NewSession(conn *websocket.Conn) *Session {
 	return &Session{
 		// MD5 of timestamp + randomString(32) should give the right random string.
-		// id:   randomString(32),
+		id:   randomString(32),
 		conn: conn,
 		// ts:   time.Now(),
 	}
+}
+
+func randomString(n int) string {
+	b := make([]byte, n)
+	_, err := rand.Read(b)
+	if err != nil {
+		return ""
+	}
+	return base64.StdEncoding.EncodeToString(b)
 }
 
 func (s *Session) Conn() *websocket.Conn {

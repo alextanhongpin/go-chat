@@ -15,26 +15,28 @@ func NewTableCache(client *redis.Client) *TableCache {
 	return &TableCache{client}
 }
 
-func (r *TableCache) Add(user, room interface{}) error {
-	if _, ok := user.(UserID); !ok {
+func (t *TableCache) Add(user, room interface{}) error {
+	u, ok := user.(UserID)
+	if !ok {
 		return errors.New("UserID is required")
 	}
-	if _, ok := user.(RoomID); !ok {
+	r, ok := room.(RoomID)
+	if !ok {
 		return errors.New("RoomID is required")
 	}
 
-	pipe := r.client.Pipeline()
-	pipe.SAdd(userKey(user.(string)), room)
-	pipe.SAdd(roomKey(room.(string)), user)
+	pipe := t.client.Pipeline()
+	pipe.SAdd(userKey(u.String()), r.String())
+	pipe.SAdd(roomKey(r.String()), u.String())
 	_, err := pipe.Exec()
 	return err
 }
 
-func (r *TableCache) Delete(user interface{}, fn func(string)) error {
+func (t *TableCache) Delete(user interface{}, fn func(string)) error {
 	if _, ok := user.(UserID); !ok {
 		return errors.New("UserID is required")
 	}
-	pipe := r.client.Pipeline()
+	pipe := t.client.Pipeline()
 	// Get the rooms that the user belong to.
 	rooms := pipe.SMembers(userKey(user.(string))).Val()
 
@@ -47,14 +49,14 @@ func (r *TableCache) Delete(user interface{}, fn func(string)) error {
 	return err
 }
 
-func (r *TableCache) Get(a interface{}) []string {
+func (t *TableCache) Get(a interface{}) []string {
 	switch a.(type) {
 	case UserID:
-		user := a.(string)
-		return r.client.SMembers(userKey(user)).Val()
+		user := a.(UserID)
+		return t.client.SMembers(userKey(user.String())).Val()
 	case RoomID:
-		room := a.(string)
-		return r.client.SMembers(roomKey(room)).Val()
+		room := a.(RoomID)
+		return t.client.SMembers(roomKey(room.String())).Val()
 	default:
 		return []string{}
 	}
