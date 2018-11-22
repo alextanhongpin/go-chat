@@ -1,44 +1,34 @@
 package chat
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/go-redis/redis"
 )
 
+// TableCache represents a table with distributed cache.
 type TableCache struct {
 	client *redis.Client
 }
 
+// NewTableCache returns a new TableCache.
 func NewTableCache(client *redis.Client) *TableCache {
 	return &TableCache{client}
 }
 
-func (t *TableCache) Add(user, room interface{}) error {
-	u, ok := user.(UserID)
-	if !ok {
-		return errors.New("UserID is required")
-	}
-	r, ok := room.(RoomID)
-	if !ok {
-		return errors.New("RoomID is required")
-	}
-
+// Add adds both user and room to the cache.
+func (t *TableCache) Add(user, room string) error {
 	pipe := t.client.Pipeline()
-	pipe.SAdd(userKey(u.String()), r.String())
-	pipe.SAdd(roomKey(r.String()), u.String())
+	pipe.SAdd(userKey(user), room)
+	pipe.SAdd(roomKey(room), user)
 	_, err := pipe.Exec()
 	return err
 }
 
-func (t *TableCache) Delete(user interface{}, fn func(string)) error {
-	if _, ok := user.(UserID); !ok {
-		return errors.New("UserID is required")
-	}
+func (t *TableCache) Delete(user string, fn func(string)) error {
 	pipe := t.client.Pipeline()
 	// Get the rooms that the user belong to.
-	rooms := pipe.SMembers(userKey(user.(string))).Val()
+	rooms := pipe.SMembers(userKey(user)).Val()
 
 	// For each room, remove the user from the set.
 	for _, room := range rooms {
@@ -49,17 +39,12 @@ func (t *TableCache) Delete(user interface{}, fn func(string)) error {
 	return err
 }
 
-func (t *TableCache) Get(a interface{}) []string {
-	switch a.(type) {
-	case UserID:
-		user := a.(UserID)
-		return t.client.SMembers(userKey(user.String())).Val()
-	case RoomID:
-		room := a.(RoomID)
-		return t.client.SMembers(roomKey(room.String())).Val()
-	default:
-		return []string{}
-	}
+func (t *TableCache) GetRooms(user string) []string {
+	return t.client.SMembers(userKey(user)).Val()
+}
+
+func (t *TableCache) GetUsers(room string) []string {
+	return t.client.SMembers(roomKey(room)).Val()
 }
 
 func userKey(u string) string {

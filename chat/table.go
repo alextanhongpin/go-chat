@@ -1,58 +1,67 @@
 package chat
 
 import (
-	"fmt"
-	"log"
 	"sync"
 )
 
 type Table struct {
 	mu   sync.RWMutex
-	data map[interface{}]map[interface{}]struct{}
+	data map[interface{}]map[string]struct{}
 }
 
 func NewTableInMemory() *Table {
 	return &Table{
-		data: make(map[interface{}]map[interface{}]struct{}),
+		data: make(map[interface{}]map[string]struct{}),
 	}
 }
 
-// If room id is provided, return an array of users in the room,
-// if user id is provided, return an array of rooms of the user.
-
 // Get returns slice string of given item.
-func (t *Table) Get(id interface{}) []string {
-	log.Printf("Table.Get: %#v \n", id)
-	t.mu.RLock()
-	items, ok := t.data[id]
-	t.mu.RUnlock()
-	if !ok {
-		log.Printf("tableError: %#v\n", id)
+func (t *Table) GetSessions(user string) []string {
+	items := t.get(UserID(user))
+	if items == nil {
 		return []string{}
 	}
 	result := make([]string, len(items))
 	var i int
 	for item := range items {
-		// result[i] = item.(string)
-		result[i] = fmt.Sprintf("%v", item)
+		result[i] = item
 		i++
 	}
 	return result
 }
 
-func (t *Table) Add(a, b interface{}) error {
-	log.Printf("Table.Add: %#v %#v\n", a, b)
-	// Add the user in the room.
-	t.add(a, b)
-	// Keep track of the rooms the user is in.
-	t.add(b, a)
-	return nil
+func (t *Table) GetUsers(room string) []string {
+	items := t.get(SessionID(room))
+	if items == nil {
+		return []string{}
+	}
+	result := make([]string, len(items))
+	var i int
+	for item := range items {
+		result[i] = item
+		i++
+	}
+	return result
 }
 
-func (t *Table) add(a, b interface{}) {
+func (t *Table) get(id interface{}) map[string]struct{} {
+	t.mu.RLock()
+	items, _ := t.data[id]
+	t.mu.RUnlock()
+	return items
+}
+
+func (t *Table) Add(user, room string) {
+	// Add the user in the room.
+	t.add(UserID(user), room)
+	// Keep track of the rooms the user is in.
+	t.add(SessionID(room), user)
+}
+
+func (t *Table) add(a interface{}, b string) {
 	t.mu.Lock()
 	if _, exist := t.data[a]; !exist {
-		t.data[a] = make(map[interface{}]struct{})
+		t.data[a] = make(map[string]struct{})
 	}
 	t.data[a][b] = struct{}{}
 	t.mu.Unlock()
@@ -60,24 +69,19 @@ func (t *Table) add(a, b interface{}) {
 
 // To delete a, delete instance of a in every b first. If b is empty, delete b.
 // Then delete all bs in a.
-func (t *Table) Delete(a interface{}, fn func(string)) error {
+func (t *Table) Delete(sid SessionID) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	// bs == rooms
-	if bs, exist := t.data[a]; exist {
-		// Remove the user from each room.
-		for b := range bs {
-			delete(t.data[b], a)
-			fn(b.(string))
-			// Room is empty, delete.
-			if len(t.data[b]) == 0 {
-				delete(t.data, b)
+	if users, exist := t.data[sid]; exist {
+		for user := range users {
+			delete(t.data[UserID(user)], sid.String())
+			if len(t.data[user]) == 0 {
+				delete(t.data, user)
 			}
 		}
 
 	}
-	// Delete all user rooms.
-	delete(t.data, a)
+	delete(t.data, sid)
 	return nil
 }

@@ -71,9 +71,9 @@ type Chat struct {
 	sessions *Sessions
 
 	// Table that maps session id -> user id and vice versa. Many-to-one.
-	lookup Tabler
+	lookup *Table
 	// Table that maps user id -> room ids and vice versa. Many-to-many.
-	rooms Tabler
+	rooms *TableCache
 	db    *database.Conn
 }
 
@@ -111,7 +111,8 @@ func (c *Chat) Broadcast(msg Message) error {
 	sender, receiver := msg.Sender, msg.Receiver
 
 	// Get the other users in the same room.
-	users := c.rooms.Get(RoomID(receiver))
+	users := c.rooms.GetUsers(receiver)
+
 	log.Printf("broadcast: got users %#v\n", users)
 	for _, user := range users {
 		// Can skip this, since the user is already removed from the room.
@@ -120,7 +121,7 @@ func (c *Chat) Broadcast(msg Message) error {
 			continue
 		}
 		// Find the sessions for the user.
-		sessions := c.lookup.Get(UserID(user))
+		sessions := c.lookup.GetUsers(user)
 		log.Printf("broadcast: got sessions %#v\n", sessions)
 		for _, sid := range sessions {
 			sess := c.sessions.Get(sid)
@@ -233,7 +234,7 @@ func (c *Chat) Bind(uid UserID, sid SessionID) func() {
 	// }
 
 	// Tie the user to the existing session.
-	c.lookup.Add(uid, sid)
+	c.lookup.Add(uid.String(), sid.String())
 
 	return func() {
 		// Clear the current session that is tied to the user.
@@ -357,14 +358,12 @@ func (c *Chat) Join(uid UserID) {
 		}
 
 		// Add user to room, and keep track of rooms for user.
-		err := c.rooms.Add(uid, RoomID(room.RoomID))
+		err := c.rooms.Add(uid.String(), room.RoomID)
 		if err != nil {
 			log.Printf("JoinError: %v\n", err)
 		}
 		log.Printf("Join: added to rooms %#v\n", room.RoomID)
 	}
-	roomss := c.rooms.Get(uid)
-	log.Printf("Join: get rooms %#v\n", roomss)
 }
 
 func (c *Chat) Leave(uid UserID) {
@@ -379,7 +378,7 @@ func (c *Chat) Leave(uid UserID) {
 		}
 	}
 	// Delete user -> rooms relationship.
-	c.rooms.Delete(uid, onDelete)
+	c.rooms.Delete(uid.String(), onDelete)
 
 }
 
@@ -396,15 +395,15 @@ func (c *Chat) Clear(sess *Session) {
 // Get(SessionID) will return one user.
 // To get the session.
 func (c *Chat) Get(key interface{}) []*Session {
-	switch key.(type) {
+	switch v := key.(type) {
 	case SessionID:
-		sess := c.sessions.Get(key.(string))
+		sess := c.sessions.Get(v.String())
 		return []*Session{sess}
 	case UserID:
 		// If the UserID is provided, get the SessionID first
 		// in order to retrieve the session.
 		// A userID can have multiple sessions (many tabs)
-		sessions := c.lookup.Get(key)
+		sessions := c.lookup.GetSessions(v.String())
 		result := make([]*Session, len(sessions))
 
 		for i, sess := range sessions {
