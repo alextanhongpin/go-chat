@@ -16,6 +16,7 @@ import (
 	"github.com/alextanhongpin/go-chat/repository"
 	"github.com/alextanhongpin/go-chat/ticket"
 	"github.com/go-redis/redis"
+	"go.uber.org/zap"
 )
 
 func main() {
@@ -36,7 +37,9 @@ func main() {
 
 	ticketDispenser := ticket.NewDispenser([]byte(jwtSecret), jwtIssuer, 5*time.Minute)
 
-	s := chat.New(db, NewRedis())
+	logger, _ := zap.NewProduction()
+	defer logger.Sync() // flushes buffer, if any
+	s := chat.New(db, NewRedis(), logger)
 	defer s.Close()
 
 	mux := http.NewServeMux()
@@ -45,7 +48,7 @@ func main() {
 	mux.HandleFunc("/ws", s.ServeWS(ticketDispenser, db))
 	mux.HandleFunc("/auth", handleAuth(ticketDispenser, db))
 	mux.HandleFunc("/rooms", authMiddleware(ticketDispenser)(handleGetRooms(db)))
-	mux.HandleFunc("/conversations", authMiddleware(ticketDispenser)(handleGetConversations(db)))
+	mux.HandleFunc("/conversations/", authMiddleware(ticketDispenser)(handleGetConversations(db)))
 
 	log.Printf("listening to port *%s. press ctrl + c to cancel.\n", port)
 	log.Fatal(http.ListenAndServe(port, mux))
@@ -170,9 +173,11 @@ type getRoomsResponse struct {
 
 func handleGetConversations(db repository.Conversation) http.HandlerFunc {
 	pattern := regexp.MustCompile(`^\/conversations\/([\w+])\/?$`)
+	log.Println("GET /conversations")
 	// res := r.FindStringSubmatch("/users/1")
 	return func(w http.ResponseWriter, r *http.Request) {
 		submatches := pattern.FindStringSubmatch(r.URL.Path)
+		log.Println("got submatches", submatches)
 		if submatches == nil {
 			http.Error(w, "room_id is required", http.StatusBadRequest)
 			return

@@ -137,6 +137,7 @@
       socket.onmessage = (evt) => {
         try {
           let msg = JSON.parse(evt.data)
+          console.log(msg)
           switch (msg.type) {
             case 'typing':
             {

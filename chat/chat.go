@@ -8,6 +8,7 @@ import (
 	"github.com/alextanhongpin/go-chat/database"
 	"github.com/alextanhongpin/go-chat/ticket"
 	"github.com/go-redis/redis"
+	"go.uber.org/zap"
 
 	"github.com/gorilla/websocket"
 )
@@ -24,33 +25,9 @@ var (
 
 	// Send pings to peer with this period. Must be less than pongWait.
 	pingPeriod = (pongWait * 9) / 10
+
+	defaultBroadcastQueueSize = 10000
 )
-
-type Message struct {
-	// The text content of the message.
-	Text string `json:"text"`
-
-	// Unique ID for the message created.
-	ID string `json:"id"`
-
-	// The type for client to handle polymorphism.
-	Type string `json:"type"`
-
-	Timestamp int64 `json:"timestamp"`
-	// User might not persist timestamp that long (when messages are loaded from db).
-	// k = HMAC(timestamp,id,msg, sk)
-	// timestamp|id|(msg|sender)k|HMAC(timestamp|id|sender|msg, sk))
-	// Hash string
-
-	// The sender of the message. Usually a user id.
-	Sender string `json:"sender"`
-
-	// The receiver in this case is the room id (chat group), rather than
-	// the user id. This provides better flexibility, as it allows us to
-	// send conversations to more than a person (users in the same group,
-	// rather than just direct message to a single user).
-	Receiver string `json:"receiver"`
-}
 
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
@@ -73,12 +50,12 @@ type Chat struct {
 	// Table that maps session id -> user id and vice versa. Many-to-one.
 	lookup *Table
 	// Table that maps user id -> room ids and vice versa. Many-to-many.
-	rooms *TableCache
-	db    *database.Conn
+	rooms  *TableCache
+	db     *database.Conn
+	logger *zap.Logger
 }
 
-func New(db *database.Conn, client *redis.Client) *Chat {
-	defaultBroadcastQueueSize := 10000
+func New(db *database.Conn, client *redis.Client, logger *zap.Logger) *Chat {
 	c := Chat{
 		broadcast: make(chan Message, defaultBroadcastQueueSize),
 		quit:      make(chan struct{}),
@@ -86,12 +63,14 @@ func New(db *database.Conn, client *redis.Client) *Chat {
 		lookup:    NewTableInMemory(),
 		rooms:     NewTableCache(client),
 		db:        db,
+		logger:    logger.With(zap.String("pkg", "Chat")),
 	}
 
 	// Register to pubsub to listen to the server.
 	// os.Hostname()
 
-	log.Println("chat: starting event loop")
+	// log.Println("chat: starting event loop")
+	logger.Info("starting event loop")
 	go c.eventloop()
 
 	return &c
@@ -102,34 +81,38 @@ func (c *Chat) Close() {
 	// This is preferred, as it will block unlike close.
 	c.quit <- struct{}{}
 	close(c.quit)
-	log.Println("chat: closing")
+	c.logger.Info("closing")
 }
 
 // Broadcast sends a message to a client.
 func (c *Chat) Broadcast(msg Message) error {
-	log.Printf("broadcast: got message %#v\n", msg)
+	logger := c.logger.With(zap.String("method", "Broadcast"))
+	logger.Info("got message",
+		zap.String("receiver", msg.Receiver),
+		zap.String("sender", msg.Sender))
 	sender, receiver := msg.Sender, msg.Receiver
+	_ = sender
 
 	// Get the other users in the same room.
 	users := c.rooms.GetUsers(receiver)
-
-	log.Printf("broadcast: got users %#v\n", users)
 	for _, user := range users {
 		// Can skip this, since the user is already removed from the room.
-		if user == sender {
-			log.Printf("broadcast: skip ownself %#v\n", user)
-			continue
-		}
+		// if user == sender {
+		//         logger.Info("skip ownself")
+		//         continue
+		// }
 		// Find the sessions for the user.
-		sessions := c.lookup.GetUsers(user)
-		log.Printf("broadcast: got sessions %#v\n", sessions)
+		sessions := c.lookup.GetSessions(user)
 		for _, sid := range sessions {
 			sess := c.sessions.Get(sid)
+			if sess == nil {
+				continue
+			}
 			err := sess.Conn().WriteJSON(msg)
 			if err != nil {
 				// Clear session.
 				c.Clear(sess)
-				log.Printf("broadcastError: %v\n", err)
+				logger.Warn("error sending json", zap.Error(err))
 				return err
 			}
 		}
@@ -138,45 +121,36 @@ func (c *Chat) Broadcast(msg Message) error {
 }
 
 func (c *Chat) eventloop() {
+	logger := c.logger.With(zap.String("method", "eventloop"))
 loop:
 	for {
 		select {
 		case <-c.quit:
-			log.Println("server: quit")
+			logger.Info("quit")
 			break loop
 		case msg, ok := <-c.broadcast:
 			if !ok {
 				break loop
 			}
-			c.Broadcast(msg)
+			logger.Info("got message",
+				zap.String("type", msg.Type),
+				zap.String("receiver", msg.Receiver),
+				zap.String("sender", msg.Sender),
+				zap.String("text", msg.Text))
+
 			switch msg.Type {
-			// case TypeTyping:
-			// err := s.Broadcast()
-			// if err != nil {
-			//         log.Println("typingError:", err)
-			// }
-			// case TypeAuth:
-			// err := s.Broadcast(msg.From, Message{
-			//         Data: msg.From,
-			//         Type: msg.Type,
-			// })
-			// if err != nil {
-			//         log.Println("authError:", err)
-			// }
-			// case TypeStatus:
-			// Data is the user_id that we want to check the status of.
-			// user := msg.Data
-			// _, found := s.clients[user]
-			// data := "0"
-			// if found {
-			//         data = "1"
-			// }
-			// s.Broadcast(msg.From, Message{
-			//         Data: data,
-			//         Type: "status",
-			//         Room: msg.Room,
-			//         // From: user,
-			// })
+			case MessageTypeStatus.String():
+				sess := c.Get(UserID(msg.Text))
+				data := "0"
+				if sess != nil {
+					data = "1"
+				}
+				logger.Info("status", zap.String("data", data))
+				msg.Text = data
+				c.Broadcast(msg)
+			case MessageTypeAuth:
+				msg.Text = msg.Sender
+				c.Broadcast(msg)
 			// case TypePresence:
 			// clients := s.cache.GetUsers(msg.Room)
 			//
@@ -188,31 +162,34 @@ loop:
 			//         // friends. Fanout operation.
 			//         s.Broadcast(peer, msg)
 			// }
-			// case TypeMessage:
-			// s.cache.AddUser(msg.From, msg.Room)
-			//
-			// // Store the conversation in a database. It
-			// // might be a better idea to use a queue rather
-			// // than writing directly to the datastore.
-			// _, err := s.db.CreateConversationReply(msg.From, msg.Room, msg.Data)
-			// if err != nil {
-			//         log.Printf("error: conversation create error, %v\n", err)
-			//         continue
-			// }
-			//
-			// // Get the list of peers it can send message to.
-			// // clients := s.rooms.GetUsers(msg.Room)
-			// clients := s.cache.GetUsers(msg.Room)
-			//
-			// // Send only to clients in the particular room.
-			// for _, peer := range clients {
-			//         log.Println("server: broadcasting message to peer", peer, msg)
-			//         // This could be executed in a goroutine if the
-			//         // users have many friends. Fanout operation.
-			//         s.Broadcast(peer, msg)
-			// }
-			// default:
-			// log.Printf("message type %s not supported\n", msg.Type)
+			case MessageTypeMessage:
+				// s.cache.AddUser(msg.From, msg.Room)
+				//
+				// // Store the conversation in a database. It
+				// // might be a better idea to use a queue rather
+				// // than writing directly to the datastore.
+				_, err := c.db.CreateConversationReply(msg.Sender, msg.Receiver, msg.Text)
+				if err != nil {
+					logger.Warn("error creating reply", zap.Error(err))
+					continue
+				}
+				// Get the list of peers it can send message to.
+				// clients := s.rooms.GetUsers(msg.Room)
+				// c.Get(UserID(msg.Receiver))
+				// clients := s.cache.GetUsers(msg.Room)
+
+				// Send only to clients in the particular room.
+				// for _, peer := range clients {
+				//         log.Println("server: broadcasting message to peer", peer, msg)
+				//         // This could be executed in a goroutine if the
+				//         // users have many friends. Fanout operation.
+				// }
+				c.Broadcast(msg)
+				// default:
+				// log.Printf("message type %s not supported\n", msg.Type)
+			default:
+				c.Broadcast(msg)
+
 			}
 		}
 	}
@@ -367,7 +344,6 @@ func (c *Chat) Join(uid UserID) {
 }
 
 func (c *Chat) Leave(uid UserID) {
-	log.Printf("%v left the chat\n", uid)
 	// For each room that the user belong to, remove the user.
 	onDelete := func(room string) {
 		sender, receiver := string(uid), room
@@ -379,6 +355,9 @@ func (c *Chat) Leave(uid UserID) {
 	}
 	// Delete user -> rooms relationship.
 	c.rooms.Delete(uid.String(), onDelete)
+	c.logger.Info("left room",
+		zap.String("method", "Leave"),
+		zap.String("user", uid.String()))
 
 }
 
@@ -387,6 +366,10 @@ func (c *Chat) Clear(sess *Session) {
 	sess.Conn().Close()
 	sessionID := sess.SessionID()
 	c.sessions.Delete(string(sessionID))
+
+	c.logger.Info("clear session",
+		zap.String("session", sessionID.String()),
+		zap.String("method", "Clear"))
 }
 
 // One-to-many relationship between sessions and user.
@@ -400,12 +383,11 @@ func (c *Chat) Get(key interface{}) []*Session {
 		sess := c.sessions.Get(v.String())
 		return []*Session{sess}
 	case UserID:
-		// If the UserID is provided, get the SessionID first
-		// in order to retrieve the session.
-		// A userID can have multiple sessions (many tabs)
+		// If the UserID is provided, get the SessionID first in order
+		// to retrieve the session.
+		// A userID can have multiple sessions (many tabs).
 		sessions := c.lookup.GetSessions(v.String())
 		result := make([]*Session, len(sessions))
-
 		for i, sess := range sessions {
 			result[i] = c.sessions.Get(sess)
 		}
