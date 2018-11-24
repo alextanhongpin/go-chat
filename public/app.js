@@ -120,6 +120,7 @@
 
         // Fetch rooms for user.
         let rooms = await fetchRooms(user, token)
+        console.log('fetched rooms:', rooms)
         this.rooms = rooms
 
         // For each room, fetch the last 10 conversations.
@@ -137,7 +138,7 @@
       socket.onmessage = (evt) => {
         try {
           let msg = JSON.parse(evt.data)
-          console.log(msg)
+          console.log('got message', msg)
           switch (msg.type) {
             case 'typing':
             {
@@ -335,6 +336,7 @@
       }
 
       for (let room of rooms) {
+        console.log(`room ${room.room_id} has user ${room.user_id}`)
         if (!prevState.has(room.room_id)) {
           const $room = document.createElement('chat-room')
           $room.user = room.name
@@ -351,6 +353,7 @@
 
           this.state.rooms.set(room.room_id, room)
           this.state.$rooms.set(room, $room)
+          // For each user in the room, request the current status (online/offline).
           this.state.socket.send(JSON.stringify({
             type: 'status',
             data: `${room.user_id}`,

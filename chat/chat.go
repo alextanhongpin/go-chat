@@ -142,26 +142,19 @@ loop:
 			case MessageTypeStatus.String():
 				sess := c.Get(UserID(msg.Text))
 				data := "0"
-				if sess != nil {
+				if len(sess) != 0 {
 					data = "1"
 				}
-				logger.Info("status", zap.String("data", data))
+				log.Println("session", sess)
+				logger.Info("check status user in room",
+					zap.String("status", data),
+					zap.String("user", msg.Text),
+					zap.String("room", msg.Receiver))
 				msg.Text = data
 				c.Broadcast(msg)
 			case MessageTypeAuth:
 				msg.Text = msg.Sender
 				c.Broadcast(msg)
-			// case TypePresence:
-			// clients := s.cache.GetUsers(msg.Room)
-			//
-			// // Send only to clients in the particular room.
-			// for _, peer := range clients {
-			//         log.Println("server: broadcasting message to peer", peer, msg)
-			//         // This could be executed in a
-			//         // goroutine if the users have many
-			//         // friends. Fanout operation.
-			//         s.Broadcast(peer, msg)
-			// }
 			case MessageTypeMessage:
 				// s.cache.AddUser(msg.From, msg.Room)
 				//
