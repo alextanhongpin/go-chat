@@ -93,24 +93,31 @@ func (c *Chat) Broadcast(msg Message) error {
 	sender, receiver := msg.Sender, msg.Receiver
 	_ = sender
 
-	// Get the other users in the same room.
+	// Get all users in the same room.
 	users := c.rooms.GetUsers(receiver)
 	for _, user := range users {
-		// Can skip this, since the user is already removed from the room.
+		// sendToSelf: bool
+		// If set to true, allow sending to one-self. Else, skip.
 		// if user == sender {
 		//         logger.Info("skip ownself")
 		//         continue
 		// }
-		// Find the sessions for the user.
+
+		// Get the sessions for the user. A user can have more than one
+		// session.
 		sessions := c.lookup.GetSessions(user)
 		for _, sid := range sessions {
 			sess := c.sessions.Get(sid)
+			// Session happens to be empty, but still in the list.
 			if sess == nil {
+				// Delete the mapping between session id and
+				// user id.
+				logger.Info("session does not exist",
+					zap.String("sid", sid))
 				continue
 			}
 			err := sess.Conn().WriteJSON(msg)
 			if err != nil {
-				// Clear session.
 				c.Clear(sess)
 				logger.Warn("error sending json", zap.Error(err))
 				return err
@@ -122,6 +129,16 @@ func (c *Chat) Broadcast(msg Message) error {
 
 func (c *Chat) eventloop() {
 	logger := c.logger.With(zap.String("method", "eventloop"))
+
+	getStatus := func(user string) string {
+		sessions := c.Get(UserID(user))
+		// User has not sessions in place.
+		if len(sessions) == 0 {
+			return "0"
+		}
+		return "1"
+	}
+
 loop:
 	for {
 		select {
@@ -132,58 +149,36 @@ loop:
 			if !ok {
 				break loop
 			}
-			logger.Info("got message",
+			logger.Info("processing message",
 				zap.String("type", msg.Type),
 				zap.String("receiver", msg.Receiver),
 				zap.String("sender", msg.Sender),
 				zap.String("text", msg.Text))
 
 			switch msg.Type {
-			case MessageTypeStatus.String():
-				sess := c.Get(UserID(msg.Text))
-				data := "0"
-				if len(sess) != 0 {
-					data = "1"
-				}
-				log.Println("session", sess)
+			case MessageTypeStatus:
+				// Requesting the status of a particular user.
+				// msg.Text is the user_id in question.
+				msg.Text = getStatus(msg.Text)
 				logger.Info("check status user in room",
-					zap.String("status", data),
+					zap.String("status", msg.Text),
 					zap.String("user", msg.Text),
 					zap.String("room", msg.Receiver))
-				msg.Text = data
-				c.Broadcast(msg)
 			case MessageTypeAuth:
+				// TODO: Remove this.
 				msg.Text = msg.Sender
-				c.Broadcast(msg)
 			case MessageTypeMessage:
-				// s.cache.AddUser(msg.From, msg.Room)
-				//
-				// // Store the conversation in a database. It
-				// // might be a better idea to use a queue rather
-				// // than writing directly to the datastore.
+				// Store the conversation in a database. It
+				// might be a better idea to use a queue rather
+				// than writing directly to the datastore.
 				_, err := c.db.CreateConversationReply(msg.Sender, msg.Receiver, msg.Text)
 				if err != nil {
 					logger.Warn("error creating reply", zap.Error(err))
 					continue
 				}
-				// Get the list of peers it can send message to.
-				// clients := s.rooms.GetUsers(msg.Room)
-				// c.Get(UserID(msg.Receiver))
-				// clients := s.cache.GetUsers(msg.Room)
-
-				// Send only to clients in the particular room.
-				// for _, peer := range clients {
-				//         log.Println("server: broadcasting message to peer", peer, msg)
-				//         // This could be executed in a goroutine if the
-				//         // users have many friends. Fanout operation.
-				// }
-				c.Broadcast(msg)
-				// default:
-				// log.Printf("message type %s not supported\n", msg.Type)
 			default:
-				c.Broadcast(msg)
-
 			}
+			c.Broadcast(msg)
 		}
 	}
 }
@@ -196,11 +191,15 @@ func (c *Chat) newSession(ws *websocket.Conn) *Session {
 
 // Bind ties the user id and session id together. One user might have multiple sessions.
 func (c *Chat) Bind(uid UserID, sid SessionID) func() {
+	logger := c.logger.With(zap.String("method", "Bind"))
 	// TODO: Check if the session already exist. If yes, there is no need to add the
 	// user into the room.
 	// if !c.lookup.Has(uid) {
 	// Connect the user to the room.
 	c.Join(uid)
+	logger.Info("bind user with session",
+		zap.String("user", uid.String()),
+		zap.String("session", sid.String()))
 	// }
 
 	// Tie the user to the existing session.
@@ -214,9 +213,16 @@ func (c *Chat) Bind(uid UserID, sid SessionID) func() {
 			c.Clear(sess)
 		}
 
+		logger.Info("clearing session",
+			zap.String("user", uid.String()),
+			zap.String("session", sid.String()))
 		// If the user does not have any other sessions left, clear the room.
 		// One user can have multiple sessions.
+		log.Println("getting user sessions", c.Get(uid))
 		if len(c.Get(uid)) == 0 {
+			logger.Info("leaving room",
+				zap.String("user", uid.String()),
+				zap.String("session", sid.String()))
 			// Clear rooms. Only if there are no longer any sessions available for that particular user.
 			c.Leave(uid)
 		}
@@ -322,9 +328,10 @@ func (c *Chat) Join(uid UserID) {
 
 		// Broadcast to a room.
 		c.broadcast <- Message{
-			Type:     MessageTypeOnline.String(),
+			Type:     MessageTypeOffline,
 			Sender:   sender,
 			Receiver: receiver,
+			Text:     "1",
 		}
 
 		// Add user to room, and keep track of rooms for user.
@@ -339,15 +346,20 @@ func (c *Chat) Join(uid UserID) {
 func (c *Chat) Leave(uid UserID) {
 	// For each room that the user belong to, remove the user.
 	onDelete := func(room string) {
+		log.Println("deleting room", room, uid)
 		sender, receiver := string(uid), room
 		c.broadcast <- Message{
-			Type:     MessageTypeOffline.String(),
+			Type:     MessageTypePresence,
 			Sender:   sender,
 			Receiver: receiver,
+			Text:     "0", // Offline
 		}
 	}
 	// Delete user -> rooms relationship.
-	c.rooms.Delete(uid.String(), onDelete)
+	err := c.rooms.Delete(uid.String(), onDelete)
+	if err != nil {
+		log.Println("error removing from roomz", err)
+	}
 	c.logger.Info("left room",
 		zap.String("method", "Leave"),
 		zap.String("user", uid.String()))
@@ -374,15 +386,21 @@ func (c *Chat) Get(key interface{}) []*Session {
 	switch v := key.(type) {
 	case SessionID:
 		sess := c.sessions.Get(v.String())
+		if sess == nil {
+			return nil
+		}
 		return []*Session{sess}
 	case UserID:
 		// If the UserID is provided, get the SessionID first in order
 		// to retrieve the session.
 		// A userID can have multiple sessions (many tabs).
+		var result []*Session
 		sessions := c.lookup.GetSessions(v.String())
-		result := make([]*Session, len(sessions))
-		for i, sess := range sessions {
-			result[i] = c.sessions.Get(sess)
+		for _, sess := range sessions {
+			session := c.sessions.Get(sess)
+			if session != nil {
+				result = append(result, session)
+			}
 		}
 		return result
 	default:
