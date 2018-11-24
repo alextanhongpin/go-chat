@@ -69,310 +69,367 @@
     </div>
 	`
 
-  class ChatApp extends HTMLElement {
-    constructor () {
-      super()
-      this.attachShadow({ mode: 'open' })
-        .appendChild(template.content.cloneNode(true))
+  const ChatApp = (function() {
+    const map = new WeakMap()
 
-      this.state = {
-        connected: false,
-        user: '',
-        // rooms: [],
-        // roomsCache: new WeakMap(),
-        rooms: new Map(),
-        $rooms: new WeakMap(),
-        socket: null,
-        room: null, // The selected room
-        isTyping: false,
-        isTypingInterval: null,
-        chattingWith: '',
-        conversations: new Map(),
-        roomTimeouts: {}
+    const internal = function(key) {
+      if (!map.has(key)) {
+        map.set(key, {})
       }
+      return map.get(key)
     }
 
-    async connectedCallback () {
-      if (!this.hasAttribute('socket_uri')) {
-        console.error('attribute "socket_uri" required')
-        return
+    class ChatApp extends HTMLElement {
+      constructor () {
+        super()
+        this.attachShadow({ mode: 'open' })
+          .appendChild(template.content.cloneNode(true))
+
+        internal(this).state = {
+          connected: false,
+          // The current user.
+          user: '',
+
+          // The rooms the user is in.
+          rooms: new WeakMap(),
+
+          // The View of the rooms.
+          $rooms: new WeakMap(),
+
+          // The websocket connection.
+          socket: null,
+
+          // State of isTyping.
+          isTyping: false,
+          
+          // Throttle for typing.
+          isTypingInterval: null,
+
+          // Current chat conversation.
+          chattingWith: '',
+
+          // The current room.
+          room: null, 
+
+          // Hold all the current conversation.
+          conversations: new Map(),
+          
+          // Timeouts for each room.
+          roomTimeouts: {}
+        }
       }
 
-      let socketUri = this.getAttribute('socket_uri')
+      async connectedCallback () {
+        if (!this.hasAttribute('socket_uri')) {
+          throw new Error('attribute "socket_uri" required')
+          return
+        }
 
-      // Ask for username for identification.
-      let user = window.prompt('enter username')
-      let token = await authenticate(user)
+        // Get application state.
+        const state = internal(this).state
 
-      // Initialize websocket connection.
-      let socket = new window.WebSocket(`${socketUri}?token=${token}`)
+        const socketUri = this.getAttribute('socket_uri')
 
-      // Utility method for sending JSON through websocket.
-      let send = (msg) => {
-        socket.send(JSON.stringify(msg))
-      }
+        // Ask for username for identification.
+        // TODO: Remove this after replacing with login.
+        const user = window.prompt('enter username')
+        if (!user.trim().length) {
+          throw new Error('username is required')
+        }
 
-      this.socket = socket
+        // Handshake.
+        const token = await authenticate(user)
 
-      socket.onopen = async () => {
-        // Request for the user id.
-        send({ type: 'auth' })
+        // Connect WebSocket. 
+        const socket = new window.WebSocket(`${socketUri}?token=${token}`)
+        state.socket = socket
 
-        // Fetch rooms for user.
-        let rooms = await fetchRooms(user, token)
-        console.log('fetched rooms:', rooms)
-        this.rooms = rooms
+        // Utility method for sending JSON through websocket.
+        const send = (msg) => socket.send(JSON.stringify(msg))
 
-        // For each room, fetch the last 10 conversations.
-        let promises = rooms
-          .map(({ room_id }) => room_id)
-          .map(roomId => fetchConversations(roomId, token))
-        let conversations = await Promise.all(promises)
-        // let results = conversations.reduce((acc, { room, data }) => {
-        //   acc[room] = data
-        //   return acc
-        // }, {})
-        this.conversations = conversations
-      }
+        socket.onopen = async () => {
+          // Request for the user id.
+          send({ type: 'auth' })
 
-      socket.onmessage = (evt) => {
-        try {
-          let msg = JSON.parse(evt.data)
-          console.log('got message', msg)
-          switch (msg.type) {
-            case 'typing':
-            {
-              if (!this.state.rooms.has(msg.room)) {
-                return
-              }
-              let roomId = msg.room
-              let room = this.state.rooms.get(roomId)
-              let $room = this.state.$rooms.get(room)
-              if (!$room) {
-                return
-              }
+          // Fetch rooms for user.
+          const rooms = await fetchRooms(user, token)
+          this.rooms = rooms 
 
-              // This won't retrieve the last conversation.
-              // let prevMessage = $room.message
+          // For each room, fetch the last 10 conversations.
+          const promises = rooms 
+            .map(({ room_id }) => room_id)
+            .map(roomId => fetchConversations(roomId, token))
 
-              $room.message = `...${room.name} is typing`
-              this.state.roomTimeouts[roomId] && window.clearTimeout(this.state.roomTimeouts[roomId])
-              this.state.roomTimeouts[roomId] = window.setTimeout(() => {
-                // This ensure that the last conversations will always be retrieved.
-                let conversations = this.state.conversations.get(roomId)
-                let last = conversations[conversations.length - 1]
-                $room.message = last.text
-              }, 2000)
-              break
-            }
-            case 'auth':
-            {
-              this.user = msg.data
-              break
-            }
-            case 'status':
-            {
-              let roomId = msg.room
-              let room = this.state.rooms.get(roomId)
-              let $room = this.state.$rooms.get(room)
-              if (!$room) {
-                return
-              }
-              $room.status = msg.data === '1'
-              $room.timestamp = new Date()
-              break
-            }
-            case 'presence':
-            {
-              let roomId = msg.room
-              let room = this.state.rooms.get(roomId)
-              let $room = this.state.$rooms.get(room)
-              if (!$room) {
-                return
-              }
-              $room.status = msg.data === '1'
-              $room.timestamp = new Date()
-              break
-            }
-            case 'message':
+          const conversations = await Promise.all(promises)
+          this.conversations = conversations
+          console.log('got conversations', conversations)
+          console.log(internal(this).state)
+        }
+
+        socket.onmessage = (evt) => {
+          const state = internal(this).state
+          const {$rooms, rooms} = state
+          try {
+            const msg = JSON.parse(evt.data)
+            console.log('got message', msg)
+            switch (msg.type) {
+              case 'typing':
               {
-                if (this.room === msg.room) {
-                  const isSelf = this.state.user === msg.from
-                  let $dialogs = this.shadowRoot.querySelector('.dialogs')
-                  let $dialog = document.createElement('chat-dialog')
-                  $dialog.isSelf = isSelf
-                  $dialog.message = msg.data
-                  $dialogs.appendChild($dialog)
+                if (!rooms.has(msg.room)) {
+                  return
                 }
-
-                // Add new conversation.
-                let conversations = this.state.conversations.get(msg.room)
-                let isNew = false
-                if (!conversations) {
-                  isNew = true
-                  conversations = []
-                  this.state.conversations.set(msg.room, conversations)
-
+                const roomId = msg.room
+                const room = rooms.get(roomId)
+                const $room = $rooms.get(room)
+                if (!$room) {
                   return
                 }
 
-                let newMessage = {
-                  user_id: msg.from,
-                  text: msg.data,
-                  created_at: new Date()
-                }
-                conversations.push(newMessage)
-                if (isNew) {
-                  this.renderDialogs(conversations)
-                }
-                // Update last message for the room.
-                let room = this.state.rooms.get(msg.room)
-                let $room = this.state.$rooms.get(room)
-                $room.message = msg.data
-                $room.timestamp = msg.created_at
+                // Update view...
+                $room.message = `...${room.name} is typing`
+
+                internal(this).state.roomTimeouts[roomId] && window.clearTimeout(internal(this).state.roomTimeouts[roomId])
+                internal(this).state.roomTimeouts[roomId] = window.setTimeout(() => {
+                  // This ensure that the last conversations will always be retrieved.
+                  const conversations = internal(this).state.conversations.get(roomId)
+                  const last = conversations[conversations.length - 1]
+
+                  $room.message = last.text
+                }, 2000)
+                break
               }
-              break
-            default:
+              case 'auth':
+              {
+                state.user = msg.data
+                break
+              }
+              // Checks the current status (online/offline) of the user. 
+              case 'status':
+              {
+                // Bad. We need to update the state first, then only update the
+                // view. 
+                const $room = this.getRoomView(msg.room)
+                if (!$room) return 
+                $room.status = msg.data === '1'
+                $room.timestamp = new Date()
+                break
+              }
+              case 'presence':
+              {
+                const $room = this.getRoomView(msg.room)
+                if (!$room) return 
+                $room.status = msg.data === '1'
+                $room.timestamp = new Date()
+                break
+              }
+              case 'message':
+                {
+                  const { 
+                    room, 
+                    user,
+                    rooms,
+                    $rooms
+                  } = internal(this).state
+                  if (room === msg.room) {
+                    const isSelf = user === msg.from
+                    const $dialogs = this.shadowRoot.querySelector('.dialogs')
+                    const $dialog = document.createElement('chat-dialog')
+                    $dialog.isSelf = isSelf
+                    $dialog.message = msg.data
+                    $dialogs.appendChild($dialog)
+                  }
+
+                  // Add new conversation.
+                  const conversations = internal(this).state.conversations.get(msg.room)
+                  const isNew = false
+                  if (!conversations) {
+                    isNew = true
+                    conversations = []
+                    internal(this).state.conversations.set(msg.room, conversations)
+                    return
+                  }
+
+                  const newMessage = {
+                    user_id: msg.from,
+                    text: msg.data,
+                    created_at: new Date()
+                  }
+                  conversations.push(newMessage)
+                  if (isNew) {
+                    this.renderDialogs(conversations)
+                  }
+                  // Update last message for the room.
+                  const $room = this.getRoomView(msg.room)
+                  $room.message = msg.data
+                  $room.timestamp = msg.created_at
+                }
+                break
+              default:
+            }
+          } catch (error) {
+            console.error(error)
           }
-        } catch (error) {
-          console.error(error)
         }
-      }
 
-      this.shadowRoot.querySelector('.send').addEventListener('click', (evt) => {
-        let $input = this.shadowRoot.querySelector('.input-message')
-        if (!$input.value.trim().length) {
-          return
-        }
-        send({
-          room: `${this.state.room}`,
-          data: $input.value,
-          type: 'message'
-        })
-        $input.value = ''
-      })
-
-      this.shadowRoot.querySelector('.input-message').addEventListener('keyup', (evt) => {
-        if (this.state.isTyping) {
-          return
-        }
-        send({
-          type: 'typing',
-          room: this.state.room,
-          data: this.state.chattingWith
-        })
-        this.state.isTyping = true
-        window.clearTimeout(this.state.isTyping)
-        this.state.isTypingInterval = window.setTimeout(() => {
-          this.state.isTyping = false
-        }, 1000)
-      })
-    }
-
-    set user (value) {
-      this.state.user = value
-    }
-
-    set socket (value) {
-      this.state.socket = value
-    }
-
-    set room (value) {
-      this.state.room = value
-    }
-
-    get room () {
-      return this.state.room
-    }
-
-    set conversations (items) {
-      for (let { data, room: roomId } of items) {
-        // Set the conversations.
-        this.state.conversations.set(roomId, data)
-
-        // Display the last message for each room.
-        let room = this.state.rooms.get(roomId)
-        let $room = this.state.$rooms.get(room)
-        if (!data) {
-          continue
-        }
-        let [head] = data
-        $room.message = head.text
-        $room.timestamp = head.created_at
-      }
-
-      // Render the first conversation.
-      if (this.state.conversations.size) {
-        let data = this.state.conversations.get(this.state.room)
-        this.renderDialogs(data)
-      }
-    }
-    renderDialogs (conversations = []) {
-      let $dialogs = this.shadowRoot.querySelector('.dialogs')
-      // Reset the view.
-      $dialogs.innerHTML = ''
-
-      // Sort in ascending order. The newest message will be last.
-      conversations.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
-      conversations.forEach((conversation) => {
-        let isSelf = this.state.user === conversation.user_id
-        let $dialog = document.createElement('chat-dialog')
-        $dialog.isSelf = isSelf
-        $dialog.message = conversation.text
-        $dialogs.appendChild($dialog)
-      })
-    }
-    set rooms (rooms) {
-      let $rooms = this.shadowRoot.querySelector('.rooms')
-
-      let prevState = this.state.rooms
-      let nextState = new Set(rooms.map(room => room.room_id))
-
-      for (let prev of prevState.keys()) {
-        if (!nextState.has(prev)) {
-          this.state.rooms.remove(prev)
-          this.state.$rooms.remove(prevState.get(prev))
-        }
-      }
-
-      for (let room of rooms) {
-        console.log(`room ${room.room_id} has user ${room.user_id}`)
-        if (!prevState.has(room.room_id)) {
-          const $room = document.createElement('chat-room')
-          $room.user = room.name
-          $room.userId = room.user_id
-          $room.room = room.room_id
-          $room.timestamp = new Date().toISOString()
-
-          $room.addEventListener('select-group', (evt) => {
-            this.room = evt.detail.room()
-            this.state.chattingWith = evt.detail.user()
-
-            this.renderDialogs(this.state.conversations.get(this.room))
+        this.shadowRoot.querySelector('.send').addEventListener('click', (evt) => {
+          let $input = this.shadowRoot.querySelector('.input-message')
+          if (!$input.value.trim().length) {
+            return
+          }
+          send({
+            room: `${internal(this).state.room}`,
+            data: $input.value,
+            type: 'message'
           })
+          $input.value = ''
+        })
 
-          this.state.rooms.set(room.room_id, room)
-          this.state.$rooms.set(room, $room)
-          // For each user in the room, request the current status (online/offline).
-          this.state.socket.send(JSON.stringify({
-            type: 'status',
-            data: `${room.user_id}`,
-            room: `${room.room_id}`
-          }))
-          $rooms.appendChild($room)
+        this.shadowRoot.querySelector('.input-message').addEventListener('keyup', (evt) => {
+          const state = internal(this)
+          const {isTyping, room, chattingWith} = state
+          if (isTyping) {
+            return
+          }
+          send({
+            type: 'typing',
+            room,
+            data: chattingWith
+          })
+          state.isTyping = true
+          window.clearTimeout(state.isTyping)
+          state.isTypingInterval = window.setTimeout(() => {
+            state.isTyping = false
+          }, 1000)
+        })
+      }
+
+
+      set conversations (items) {
+        const state = internal(this).state
+        const { rooms, $rooms, conversations, room } = state
+        for (let { data, room: roomId } of items) {
+          // Set the conversations.
+          conversations.set(roomId, data)
+
+          // Display the last message for each room.
+          const $room = this.getRoomView(roomId)
+          if (!data || !$room) {
+            continue
+          }
+          const [head] = data
+          $room.message = head.text
+          $room.timestamp = head.created_at
+        }
+
+        // Render the first conversation.
+        if (conversations.size) {
+          const data = conversations.get(room)
+          this.renderDialogs(data)
         }
       }
+      renderDialogs (conversations = []) {
+        const $dialogs = this.shadowRoot.querySelector('.dialogs')
+        // Reset the view.
+        $dialogs.innerHTML = ''
 
-      // Select the first room as the main room for chatting.
-      if (this.state.rooms.size) {
-        let [room] = [...this.state.rooms.values()]
-        let $room = this.state.$rooms.get(room)
-        $room.selected = true
-        this.room = room.room_id
-        this.state.chattingWith = room.user_id
+        // Sort in ascending order. The newest message will be last.
+        conversations.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+
+        const {user} = internal(this).state
+        conversations.forEach((conversation) => {
+          const isSelf = user === conversation.user_id
+          const $dialog = document.createElement('chat-dialog')
+          $dialog.isSelf = isSelf
+          $dialog.message = conversation.text
+          $dialogs.appendChild($dialog)
+        })
+      }
+
+      // Clears the room data, and the view associated with it.
+      deleteRoom(roomId) {
+        const state = internal(this).state
+        const room = state.rooms.get(roomId)
+        // state.rooms will aut
+        state.$rooms.remove(room)
+      }
+      getRoom(roomId) {
+        return internal(this).state.rooms.get(roomId)
+      }
+      getRoomView(roomId) {
+        const state = internal(this).state
+        const room = state.rooms.get(roomId)
+        return state.$rooms.get(room)
+      }
+      newRoomView(room) {
+            const $room = document.createElement('chat-room')
+            $room.user = room.name
+            $room.userId = room.user_id
+            $room.room = room.room_id
+            $room.timestamp = new Date().toISOString()
+            return $room
+      }
+      
+      set rooms (newRooms) {
+        const state = internal(this).state
+        const {rooms, conversations, socket, $rooms: $roomsView} = state
+        const $rooms = this.shadowRoot.querySelector('.rooms')
+
+        // Perform diffing on the rooms.
+        const prevState = rooms
+        const nextState = new Set(newRooms.map(room => room.room_id))
+
+        for (let prev of prevState.keys()) {
+          if (!nextState.has(prev)) {
+            this.deleteRoom(prev)
+          }
+        }
+
+        for (let room of newRooms) {
+          if (!prevState.has(room.room_id)) {
+            // Set into collection.
+            rooms.set(room.room_id, room)
+
+            // Create a new room view.
+            const $room = this.newRoomView(room)
+            $room.addEventListener('select-group', (evt) => {
+              const prevRoom = state.room
+              console.log('select group', evt.detail.room(), evt.detail.user())
+              state.room = evt.detail.room()
+              state.chattingWith = evt.detail.user()
+
+              // Render the conversations.
+              this.renderDialogs(conversations.get(state.room))
+              // Update room view.
+              const $prevRoom = this.getRoomView(prevRoom)
+              $prevRoom.selected = false
+              const $currRoom = this.getRoomView(state.room)
+              $currRoom.selected = true
+            })
+
+            $roomsView.set(room, $room)
+
+            // For each user in the room, request the current status (online/offline).
+            socket.send(JSON.stringify({
+              type: 'status',
+              data: `${room.user_id}`,
+              room: `${room.room_id}`
+            }))
+            $rooms.appendChild($room)
+          }
+        }
+
+        // Select the first room as the main room for chatting.
+        if (rooms.size) {
+          const [room] = [...rooms.values()]
+          const $room = $roomsView.get(room)
+          $room.selected = true
+          state.room = room.room_id
+          state.chattingWith = room.user_id
+        }
       }
     }
-  }
+    return ChatApp
+  })()
 
   window.customElements.define('chat-app', ChatApp)
 
@@ -417,8 +474,6 @@
       console.error(msg)
       return []
     }
-    // const { data, room } = await response.json()
-    // return data || []
     return response.json()
   }
 })()

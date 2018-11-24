@@ -38,10 +38,14 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
+// Chat represents the chat application.
 type Chat struct {
 	// broadcast sends the message to a room.
 	broadcast chan Message
-	quit      chan struct{}
+
+	// quit signals termination of the goroutine that is handling the
+	// broadcast.
+	quit chan struct{}
 
 	// In-memory data structure, fetch from db if it doesn't exist.
 	// Table that maps session id -> session struct. One-to-one.
@@ -49,6 +53,7 @@ type Chat struct {
 
 	// Table that maps session id -> user id and vice versa. Many-to-one.
 	lookup *Table
+
 	// Table that maps user id -> room ids and vice versa. Many-to-many.
 	rooms  *TableCache
 	db     *database.Conn
@@ -130,6 +135,7 @@ func (c *Chat) Broadcast(msg Message) error {
 func (c *Chat) eventloop() {
 	logger := c.logger.With(zap.String("method", "eventloop"))
 
+	logger.Info("started event loop")
 	getStatus := func(user string) string {
 		sessions := c.Get(UserID(user))
 		// User has not sessions in place.
@@ -165,7 +171,6 @@ loop:
 					zap.String("user", msg.Text),
 					zap.String("room", msg.Receiver))
 			case MessageTypeAuth:
-				// TODO: Remove this.
 				msg.Text = msg.Sender
 			case MessageTypeMessage:
 				// Store the conversation in a database. It
@@ -192,15 +197,15 @@ func (c *Chat) newSession(ws *websocket.Conn) *Session {
 // Bind ties the user id and session id together. One user might have multiple sessions.
 func (c *Chat) Bind(uid UserID, sid SessionID) func() {
 	logger := c.logger.With(zap.String("method", "Bind"))
-	// TODO: Check if the session already exist. If yes, there is no need to add the
-	// user into the room.
-	// if !c.lookup.Has(uid) {
-	// Connect the user to the room.
-	c.Join(uid)
+	// If there are no sessions associated with the user yet, create the
+	// rooms and add users into it.
+	if sess := c.Get(uid); len(sess) == 0 {
+		logger.Info("joining room")
+		c.Join(uid)
+	}
 	logger.Info("bind user with session",
 		zap.String("user", uid.String()),
 		zap.String("session", sid.String()))
-	// }
 
 	// Tie the user to the existing session.
 	c.lookup.Add(uid.String(), sid.String())
@@ -209,21 +214,21 @@ func (c *Chat) Bind(uid UserID, sid SessionID) func() {
 		// Clear the current session that is tied to the user.
 		sessions := c.Get(sid)
 		for _, sess := range sessions {
-			// Clear session table.
 			c.Clear(sess)
 		}
 
 		logger.Info("clearing session",
 			zap.String("user", uid.String()),
 			zap.String("session", sid.String()))
+
 		// If the user does not have any other sessions left, clear the room.
 		// One user can have multiple sessions.
-		log.Println("getting user sessions", c.Get(uid))
 		if len(c.Get(uid)) == 0 {
 			logger.Info("leaving room",
 				zap.String("user", uid.String()),
 				zap.String("session", sid.String()))
-			// Clear rooms. Only if there are no longer any sessions available for that particular user.
+			// Clear rooms. Only if there are no longer any
+			// sessions available for that particular user.
 			c.Leave(uid)
 		}
 	}
