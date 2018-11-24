@@ -91,7 +91,7 @@
           user: '',
 
           // The rooms the user is in.
-          rooms: new WeakMap(),
+          rooms: new Map(),
 
           // The View of the rooms.
           $rooms: new WeakMap(),
@@ -162,8 +162,6 @@
 
           const conversations = await Promise.all(promises)
           this.conversations = conversations
-          console.log('got conversations', conversations)
-          console.log(internal(this).state)
         }
 
         socket.onmessage = (evt) => {
@@ -171,7 +169,7 @@
           const {$rooms, rooms} = state
           try {
             const msg = JSON.parse(evt.data)
-            console.log('got message', msg)
+            // console.log('got message', msg)
             switch (msg.type) {
               case 'typing':
               {
@@ -347,10 +345,10 @@
 
       // Clears the room data, and the view associated with it.
       deleteRoom(roomId) {
-        const state = internal(this).state
-        const room = state.rooms.get(roomId)
-        // state.rooms will aut
-        state.$rooms.remove(room)
+        const { rooms, $rooms }= internal(this).state
+        const room = rooms.get(roomId)
+        $rooms.remove(room)
+        rooms.delete(roomId)
       }
       getRoom(roomId) {
         return internal(this).state.rooms.get(roomId)
@@ -393,7 +391,6 @@
             const $room = this.newRoomView(room)
             $room.addEventListener('select-group', (evt) => {
               const prevRoom = state.room
-              console.log('select group', evt.detail.room(), evt.detail.user())
               state.room = evt.detail.room()
               state.chattingWith = evt.detail.user()
 
