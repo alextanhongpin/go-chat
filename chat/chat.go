@@ -74,7 +74,6 @@ func New(db *database.Conn, client *redis.Client, logger *zap.Logger) *Chat {
 	// Register to pubsub to listen to the server.
 	// os.Hostname()
 
-	// log.Println("chat: starting event loop")
 	logger.Info("starting event loop")
 	go c.eventloop()
 
@@ -268,9 +267,10 @@ func (c *Chat) ServeWS(dispenser ticket.Dispenser, db database.UserRepository) h
 			return
 		}
 
-		// Create a new session. Why not create the session together with the user id?
-		// A user can have several sessions (multiple tabs, different devices etc).
-		// We need a way to query the sessions for a particular user.
+		// Create a new session. Why not create the session together
+		// with the user id?  A user can have several sessions
+		// (multiple tabs, different devices etc). We need a way to
+		// query the sessions for a particular user.
 		session := c.newSession(ws)
 
 		// Check the db and get the user info, then tie them together.
@@ -321,12 +321,12 @@ func ping(ws *websocket.Conn) {
 
 // Join adds the user to the room.
 func (c *Chat) Join(uid UserID) {
-	log.Printf("%v join the room\n", uid)
+	logger := c.logger.With(zap.String("method", "Join"),
+		zap.String("user", uid.String()))
 	rooms, err := c.db.GetRooms(string(uid))
 	if err != nil {
-		log.Println(err)
+		logger.Warn("error getting rooms", zap.Error(err))
 	}
-	log.Printf("Join: rooms %#v\n", rooms)
 	for _, room := range rooms {
 		// Notify other user in the room first, only add the user once the room receive broadcast to avoid notifying oneself.
 		sender, receiver := string(uid), room.RoomID
@@ -342,16 +342,19 @@ func (c *Chat) Join(uid UserID) {
 		// Add user to room, and keep track of rooms for user.
 		err := c.rooms.Add(uid.String(), room.RoomID)
 		if err != nil {
-			log.Printf("JoinError: %v\n", err)
+			logger.Warn("join error", zap.Error(err))
 		}
-		log.Printf("Join: added to rooms %#v\n", room.RoomID)
+		logger.Info("joined room", zap.String("room", room.RoomID))
 	}
 }
 
 func (c *Chat) Leave(uid UserID) {
+	logger := c.logger.With(zap.String("method", "Leave"),
+		zap.String("user", uid.String()))
+
 	// For each room that the user belong to, remove the user.
 	onDelete := func(room string) {
-		log.Println("deleting room", room, uid)
+		logger.Info("delete room", zap.String("room", room))
 		sender, receiver := string(uid), room
 		c.broadcast <- Message{
 			Type:     MessageTypePresence,
@@ -363,12 +366,9 @@ func (c *Chat) Leave(uid UserID) {
 	// Delete user -> rooms relationship.
 	err := c.rooms.Delete(uid.String(), onDelete)
 	if err != nil {
-		log.Println("error removing from roomz", err)
+		logger.Warn("error removing from room", zap.Error(err))
 	}
-	c.logger.Info("left room",
-		zap.String("method", "Leave"),
-		zap.String("user", uid.String()))
-
+	logger.Info("left room")
 }
 
 func (c *Chat) Clear(sess *Session) {
