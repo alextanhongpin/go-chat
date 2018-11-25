@@ -136,7 +136,7 @@
         if (!user.trim().length) {
           throw new Error('username is required')
         }
-
+        state.user = user
         // Handshake.
         const token = await authenticate(user)
 
@@ -173,28 +173,20 @@
             switch (msg.type) {
               case 'typing':
               {
-                if (!rooms.has(msg.room)) {
-                  return
-                }
+                const { roomTimeouts, conversations } = internal(this).state
                 const roomId = msg.room
-                const room = rooms.get(roomId)
-                const $room = $rooms.get(room)
-                // const $room = this.getRoomView(msg.room)
-                if (!$room) {
-                  return
-                }
-
-                // Update view...
-                $room.message = `...${room.name} is typing`
-
-                internal(this).state.roomTimeouts[roomId] && window.clearTimeout(internal(this).state.roomTimeouts[roomId])
-                internal(this).state.roomTimeouts[roomId] = window.setTimeout(() => {
+                this.updateRoom(roomId, {
+                  message: `...${msg.data} is typing`
+                })
+                roomTimeouts[roomId] && window.clearTimeout(roomTimeouts[roomId])
+                roomTimeouts[roomId] = window.setTimeout(() => {
                   // This ensure that the last conversations will always be retrieved.
-                  const conversations = internal(this).state.conversations.get(roomId)
-                  const last = conversations[conversations.length - 1]
-
-                  $room.message = last.text
-                }, 2000)
+                  const convs = conversations.get(roomId)
+                  const last = convs[convs.length - 1]
+                  this.updateRoom(msg.room, {
+                    message: last.text
+                  })
+                }, 1000)
                 break
               }
               case 'auth':
@@ -207,18 +199,17 @@
               {
                 // Bad. We need to update the state first, then only update the
                 // view.
-                const $room = this.getRoomView(msg.room)
-                if (!$room) return
-                $room.status = msg.data === '1'
-                $room.timestamp = new Date()
+                this.updateRoom(msg.room, {
+                  status: msg.data === '1',
+                  timestamp: new Date()
+                })
                 break
               }
               case 'presence':
               {
                 // updateRoom.
-                const roomId = msg.room
                 // Controller: Update the data first, then update the view.
-                this.updateRoom(roomId, {
+                this.updateRoom(msg.room, {
                   status: msg.data === '1',
                   timestamp: new Date()
                 })
@@ -256,9 +247,10 @@
                     this.renderDialogs(conversations)
                   }
                   // Update last message for the room.
-                  const $room = this.getRoomView(msg.room)
-                  $room.message = msg.data
-                  $room.timestamp = msg.created_at
+                  this.updateRoom(msg.room, {
+                    message: msg.data,
+                    timestamp: msg.created_at
+                  })
                 }
                 break
               default:
@@ -282,7 +274,7 @@
         })
 
         this.shadowRoot.querySelector('.input-message').addEventListener('keyup', (evt) => {
-          const state = internal(this)
+          const state = internal(this).state
           const { isTyping, room, chattingWith } = state
           if (isTyping) {
             return
@@ -290,17 +282,17 @@
           send({
             type: 'typing',
             room,
-            data: chattingWith
+            data: state.user 
           })
           state.isTyping = true
-          window.clearTimeout(state.isTyping)
+          window.clearTimeout(state.isTypingInterval)
           state.isTypingInterval = window.setTimeout(() => {
             state.isTyping = false
           }, 1000)
         })
       }
 
-      updateRoom(roomId, nextState) {
+      updateRoom(roomId = '', nextState = {}) {
         const state = internal(this).state
         const {rooms, $rooms} = state
         const room = rooms.get(roomId)
@@ -310,6 +302,8 @@
         const $room = $rooms.get(room)
         $room.timestamp = room.timestamp
         $room.status = room.status
+        $room.message = room.message
+        $room.selected = room.selected
       }
 
       set conversations (items) {
@@ -320,13 +314,14 @@
           conversations.set(room, data)
 
           // Display the last message for each room.
-          const $room = this.getRoomView(room)
-          if (!data || !$room) {
+          if (!data) {
             continue
           }
           const [head] = data
-          $room.message = head.text
-          $room.timestamp = head.created_at
+          this.updateRoom(room, {
+            message: head.text,
+            timestamp: head.created_at
+          })
         }
 
         // Render the first conversation.
@@ -362,12 +357,6 @@
         rooms.delete(roomId)
       }
 
-      getRoomView (roomId) {
-        const state = internal(this).state
-        const room = state.rooms.get(roomId)
-        return state.$rooms.get(room)
-      }
-
       newRoomView (room) {
         const $room = document.createElement('chat-room')
         $room.user = room.name
@@ -379,7 +368,7 @@
 
       onChangeRoomsState (newRooms, onChangeFn) {
         const state = internal(this).state
-        const { rooms } = state
+        const { rooms, $rooms } = state
 
         // Perform diffing on the rooms.
         const prevState = rooms
@@ -388,8 +377,10 @@
         for (let prev of prevState.keys()) {
           if (!nextState.has(prev)) {
             const room = rooms.get(prev)
-            rooms.delete(prev)
-            onChangeFn && onChangeFn({type:'delete', room})
+            const $room = $rooms.get(room) 
+            // rooms.delete(prev)
+            this.deleteRoom(prev)
+            onChangeFn && onChangeFn({type:'delete', room, $room})
           }
         }
 
@@ -404,13 +395,13 @@
 
       set rooms (newRooms) {
         const state = internal(this).state
-        const { rooms, socket, $rooms: $roomsView } = state
+        const { conversations, rooms, socket, $rooms: $roomsView } = state
         const $rooms = this.shadowRoot.querySelector('.rooms')
 
-        this.onChangeRoomsState(newRooms, (({ type, room }) => {
+        this.onChangeRoomsState(newRooms, (({ type, room, $room }) => {
           switch (type) {
             case 'delete':
-              $rooms.remove(room)
+              $rooms.remove($room)
               break
             case 'add':
               const $room = this.newRoomView(room)
@@ -421,11 +412,10 @@
 
                 // Render the conversations.
                 this.renderDialogs(conversations.get(state.room))
+
                 // Update room view.
-                const $prevRoom = this.getRoomView(prevRoom)
-                $prevRoom.selected = false
-                const $currRoom = this.getRoomView(state.room)
-                $currRoom.selected = true
+                this.updateRoom(prevRoom, {selected: false})
+                this.updateRoom(state.room, {selected: true})
               })
 
               $roomsView.set(room, $room)
@@ -443,8 +433,8 @@
         // Select the first room as the main room for chatting.
         if (rooms.size) {
           const [room] = [...rooms.values()]
-          const $room = $roomsView.get(room)
-          $room.selected = true
+          this.updateRoom(room.roomId, { selected: true })
+
           state.room = room.roomId
           state.chattingWith = room.userId
         }
@@ -475,9 +465,13 @@
       this.userId = userId
       this.name = name
 
-
-      this.status = false // false means offline.
+      // true=online, false=offline
+      this.status = false 
       this.timestamp = new Date()
+      // message to display for the room.
+      this.message = ''
+      // state of the selected room for conversations.
+      this.selected = false
     }
   } 
 
