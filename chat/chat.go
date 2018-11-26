@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/alextanhongpin/go-chat/database"
+	"github.com/alextanhongpin/go-chat/repository"
 	"github.com/alextanhongpin/go-chat/ticket"
 	"github.com/go-redis/redis"
 	"go.uber.org/zap"
@@ -60,6 +61,7 @@ type Chat struct {
 	logger *zap.Logger
 }
 
+// New returns a new Chat application.
 func New(db *database.Conn, client *redis.Client, logger *zap.Logger) *Chat {
 	c := Chat{
 		broadcast: make(chan Message, defaultBroadcastQueueSize),
@@ -88,14 +90,10 @@ func (c *Chat) Close() {
 	c.logger.Info("closing")
 }
 
-// Broadcast sends a message to a client.
+// Broadcast sends a message to a room.
 func (c *Chat) Broadcast(msg Message) error {
 	logger := c.logger.With(zap.String("method", "Broadcast"))
-	logger.Info("got message",
-		zap.String("receiver", msg.Receiver),
-		zap.String("sender", msg.Sender))
-	sender, receiver := msg.Sender, msg.Receiver
-	_ = sender
+	receiver := msg.Receiver
 
 	// Get all users in the same room.
 	users := c.rooms.GetUsers(receiver)
@@ -109,13 +107,11 @@ func (c *Chat) Broadcast(msg Message) error {
 
 		// Get the sessions for the user. A user can have more than one
 		// session.
-		sessions := c.lookup.GetSessions(user)
+		sessions := c.lookup.Get(UserID(user))
 		for _, sid := range sessions {
 			sess := c.sessions.Get(sid)
-			// Session happens to be empty, but still in the list.
+			// Session does not exist in the map.
 			if sess == nil {
-				// Delete the mapping between session id and
-				// user id.
 				logger.Info("session does not exist",
 					zap.String("sid", sid))
 				continue
@@ -123,7 +119,6 @@ func (c *Chat) Broadcast(msg Message) error {
 			err := sess.Conn().WriteJSON(msg)
 			if err != nil {
 				c.Clear(sess)
-				logger.Warn("error sending json", zap.Error(err))
 				return err
 			}
 		}
@@ -134,10 +129,10 @@ func (c *Chat) Broadcast(msg Message) error {
 func (c *Chat) eventloop() {
 	logger := c.logger.With(zap.String("method", "eventloop"))
 
-	logger.Info("started event loop")
+	logger.Info("start eventloop")
 	getStatus := func(user string) string {
 		sessions := c.Get(UserID(user))
-		// User has not sessions in place.
+		// User has no sessions in place.
 		if len(sessions) == 0 {
 			return "0"
 		}
@@ -165,10 +160,6 @@ loop:
 				// Requesting the status of a particular user.
 				// msg.Text is the user_id in question.
 				msg.Text = getStatus(msg.Text)
-				logger.Info("check status user in room",
-					zap.String("status", msg.Text),
-					zap.String("user", msg.Text),
-					zap.String("room", msg.Receiver))
 			case MessageTypeAuth:
 				msg.Text = msg.Sender
 			case MessageTypeMessage:
@@ -195,37 +186,28 @@ func (c *Chat) newSession(ws *websocket.Conn) *Session {
 
 // Bind ties the user id and session id together. One user might have multiple sessions.
 func (c *Chat) Bind(uid UserID, sid SessionID) func() {
-	logger := c.logger.With(zap.String("method", "Bind"))
+	logger := c.logger.With(zap.String("method", "Bind"),
+		zap.String("user", uid.String()),
+		zap.String("session", sid.String()))
+
+	logger.Info("bind session with user")
 	// If there are no sessions associated with the user yet, create the
 	// rooms and add users into it.
 	if sess := c.Get(uid); len(sess) == 0 {
-		logger.Info("joining room")
 		c.Join(uid)
 	}
-	logger.Info("bind user with session",
-		zap.String("user", uid.String()),
-		zap.String("session", sid.String()))
 
 	// Tie the user to the existing session.
 	c.lookup.Add(uid.String(), sid.String())
 
 	return func() {
 		// Clear the current session that is tied to the user.
-		sessions := c.Get(sid)
-		for _, sess := range sessions {
-			c.Clear(sess)
-		}
-
-		logger.Info("clearing session",
-			zap.String("user", uid.String()),
-			zap.String("session", sid.String()))
+		session := c.sessions.Get(sid.String())
+		c.Clear(session)
 
 		// If the user does not have any other sessions left, clear the room.
 		// One user can have multiple sessions.
 		if len(c.Get(uid)) == 0 {
-			logger.Info("leaving room",
-				zap.String("user", uid.String()),
-				zap.String("session", sid.String()))
 			// Clear rooms. Only if there are no longer any
 			// sessions available for that particular user.
 			c.Leave(uid)
@@ -233,7 +215,7 @@ func (c *Chat) Bind(uid UserID, sid SessionID) func() {
 	}
 }
 
-func (c *Chat) ServeWS(dispenser ticket.Dispenser, db database.UserRepository) http.HandlerFunc {
+func (c *Chat) ServeWS(dispenser ticket.Dispenser, repo repository.User) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// WebSocket is a httpGet only endpoint.
 		if r.Method != http.MethodGet {
@@ -260,7 +242,7 @@ func (c *Chat) ServeWS(dispenser ticket.Dispenser, db database.UserRepository) h
 		}
 
 		// Check if the user exists in the database.
-		_, err = db.GetUser(userID)
+		_, err = repo.GetUser(userID)
 		if err != nil {
 			ws.WriteMessage(websocket.TextMessage,
 				websocket.FormatCloseMessage(websocket.CloseNormalClosure, "unauthorized"))
@@ -274,7 +256,7 @@ func (c *Chat) ServeWS(dispenser ticket.Dispenser, db database.UserRepository) h
 		session := c.newSession(ws)
 
 		// Check the db and get the user info, then tie them together.
-		close := c.Bind(UserID(userID), session.SessionID())
+		close := c.Bind(UserID(userID), SessionID(session.SessionID()))
 		defer close()
 
 		// Notify other user in the room that the user went online.
@@ -333,10 +315,10 @@ func (c *Chat) Join(uid UserID) {
 
 		// Broadcast to a room.
 		c.broadcast <- Message{
-			Type:     MessageTypeOffline,
+			Type:     MessageTypePresence,
 			Sender:   sender,
 			Receiver: receiver,
-			Text:     "1",
+			Text:     MessageOnline,
 		}
 
 		// Add user to room, and keep track of rooms for user.
@@ -360,7 +342,7 @@ func (c *Chat) Leave(uid UserID) {
 			Type:     MessageTypePresence,
 			Sender:   sender,
 			Receiver: receiver,
-			Text:     "0", // Offline
+			Text:     MessageOffline,
 		}
 	}
 	// Delete user -> rooms relationship.
@@ -372,13 +354,16 @@ func (c *Chat) Leave(uid UserID) {
 }
 
 func (c *Chat) Clear(sess *Session) {
+	if sess == nil {
+		return
+	}
 	// Closes the connection, and delete the session.
 	sess.Conn().Close()
 	sessionID := sess.SessionID()
-	c.sessions.Delete(string(sessionID))
+	c.sessions.Delete(sessionID)
 
 	c.logger.Info("clear session",
-		zap.String("session", sessionID.String()),
+		zap.String("session", sessionID),
 		zap.String("method", "Clear"))
 }
 
@@ -400,7 +385,7 @@ func (c *Chat) Get(key interface{}) []*Session {
 		// to retrieve the session.
 		// A userID can have multiple sessions (many tabs).
 		var result []*Session
-		sessions := c.lookup.GetSessions(v.String())
+		sessions := c.lookup.Get(key)
 		for _, sess := range sessions {
 			session := c.sessions.Get(sess)
 			if session != nil {

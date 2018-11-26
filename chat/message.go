@@ -1,21 +1,16 @@
 package chat
 
-type MessageType string
-
 const (
-	// MessageTypePresence = MessageType("presence")
 	MessageTypePresence = "presence"
-	MessageTypeOnline   = "online"
-	MessageTypeOffline  = "offline"
 	MessageTypeStatus   = "status"
 	MessageTypeAuth     = "auth"
 	MessageTypeMessage  = "message"
+
+	MessageOffline = "0"
+	MessageOnline  = "1"
 )
 
-func (m MessageType) String() string {
-	return string(m)
-}
-
+// Message represents the message sent through websocket.
 type Message struct {
 	// The text content of the message.
 	Text string `json:"data"`

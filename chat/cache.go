@@ -2,7 +2,6 @@ package chat
 
 import (
 	"fmt"
-	"log"
 
 	"github.com/go-redis/redis"
 )
@@ -20,7 +19,7 @@ func NewTableCache(client *redis.Client) *TableCache {
 // Add adds both user and room to the cache.
 func (t *TableCache) Add(user, room string) error {
 	pipe := t.client.Pipeline()
-	// Add room to user's list. 
+	// Add room to user's list.
 	pipe.SAdd(userKey(user), room)
 	// Add user to the room.
 	pipe.SAdd(roomKey(room), user)
@@ -32,7 +31,7 @@ func (t *TableCache) Add(user, room string) error {
 func (t *TableCache) Delete(user string, fn func(string)) error {
 	// Get the rooms the user is in.
 	rooms := t.client.SMembers(userKey(user)).Val()
-	
+
 	pipe := t.client.Pipeline()
 	// For each room, remove the user from the set.
 	for _, room := range rooms {

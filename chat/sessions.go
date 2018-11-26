@@ -17,6 +17,7 @@ type Session struct {
 	server string // The server the session resides on.
 }
 
+// NewSession returns a new websocket session.
 func NewSession(conn *websocket.Conn) *Session {
 	return &Session{
 		// MD5 of timestamp + randomString(32) should give the right random string.
@@ -35,12 +36,14 @@ func randomString(n int) string {
 	return base64.StdEncoding.EncodeToString(b)
 }
 
+// Conn returns the current session websocket connection.
 func (s *Session) Conn() *websocket.Conn {
 	return s.conn
 }
 
-func (s *Session) SessionID() SessionID {
-	return SessionID(s.id)
+// SessionID returns the id string of the session.
+func (s *Session) SessionID() string {
+	return s.id
 }
 
 // Sessions manages the session for the current socket.

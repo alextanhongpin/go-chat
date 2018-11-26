@@ -15,6 +15,7 @@ import (
 	"github.com/alextanhongpin/go-chat/entity"
 	"github.com/alextanhongpin/go-chat/repository"
 	"github.com/alextanhongpin/go-chat/ticket"
+
 	"github.com/go-redis/redis"
 	"go.uber.org/zap"
 )
@@ -86,9 +87,8 @@ func authMiddleware(dispenser ticket.Dispenser) middleware {
 					return
 				}
 				ctx := r.Context()
-				ctx = context.WithValue(ctx, entity.ContextKey("user_id"), userID)
+				ctx = context.WithValue(ctx, entity.ContextKeyUserID, userID)
 				r = r.WithContext(ctx)
-
 			}
 
 			next.ServeHTTP(w, r)
@@ -96,7 +96,7 @@ func authMiddleware(dispenser ticket.Dispenser) middleware {
 	}
 }
 
-func handleAuth(dispenser ticket.Dispenser, db database.UserRepository) http.HandlerFunc {
+func handleAuth(dispenser ticket.Dispenser, repo repository.User) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "invalid method", http.StatusMethodNotAllowed)
@@ -109,7 +109,7 @@ func handleAuth(dispenser ticket.Dispenser, db database.UserRepository) http.Han
 			return
 		}
 
-		user, err := db.GetUserByName(req.UserID)
+		user, err := repo.GetUserByName(req.UserID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -141,21 +141,15 @@ type authResponse struct {
 	Token string `json:"token"`
 }
 
-func handleGetRooms(db repository.Room) http.HandlerFunc {
+func handleGetRooms(repo repository.Room) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		userIDContext := ctx.Value(entity.ContextKey("user_id"))
-		if userIDContext == nil {
-			http.Error(w, "invalid user id", http.StatusBadRequest)
-			return
-		}
-		userID := userIDContext.(string)
-		log.Println("getting rooms", userID)
+		userID, _ := ctx.Value(entity.ContextKeyUserID).(string)
 		if userID == "" {
 			http.Error(w, "invalid user id", http.StatusBadRequest)
 			return
 		}
-		rooms, err := db.GetRooms(userID)
+		rooms, err := repo.GetRooms(userID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -171,7 +165,7 @@ type getRoomsResponse struct {
 	Data []entity.UserRoom `json:"data"`
 }
 
-func handleGetConversations(db repository.Conversation) http.HandlerFunc {
+func handleGetConversations(repo repository.Conversation) http.HandlerFunc {
 	pattern := regexp.MustCompile(`^\/conversations\/([\w+])\/?$`)
 	log.Println("GET /conversations")
 	// res := r.FindStringSubmatch("/users/1")
@@ -183,7 +177,7 @@ func handleGetConversations(db repository.Conversation) http.HandlerFunc {
 			return
 		}
 		roomID := submatches[1]
-		conversations, err := db.GetConversations(roomID)
+		conversations, err := repo.GetConversations(roomID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
