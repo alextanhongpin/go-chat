@@ -69,7 +69,6 @@
     </div>
 	`
 
-
   const ChatApp = (function () {
     const map = new WeakMap()
 
@@ -166,7 +165,6 @@
 
         socket.onmessage = (evt) => {
           const state = internal(this).state
-          const { $rooms, rooms } = state
           try {
             const msg = JSON.parse(evt.data)
             // console.log('got message', msg)
@@ -275,14 +273,14 @@
 
         this.shadowRoot.querySelector('.input-message').addEventListener('keyup', (evt) => {
           const state = internal(this).state
-          const { isTyping, room, chattingWith } = state
+          const { isTyping, room } = state
           if (isTyping) {
             return
           }
           send({
             type: 'typing',
             room,
-            data: state.user 
+            data: state.user
           })
           state.isTyping = true
           window.clearTimeout(state.isTypingInterval)
@@ -292,14 +290,26 @@
         })
       }
 
-      updateRoom(roomId = '', nextState = {}) {
+      // updateRoom will update the room model, and then update the room view.
+      updateRoom (roomId = '', nextState = {}) {
         const state = internal(this).state
-        const {rooms, $rooms} = state
-        const room = rooms.get(roomId)
-        Object.assign(room, nextState)
+        const { rooms, $rooms } = state
+        let room = rooms.get(roomId)
+        if (!room) {
+          rooms.set(roomId, nextState)
+          room = rooms.get(roomId)
+        } else {
+          // Update the model.
+          Object.assign(room, nextState)
+        }
 
         // Update the view.
         const $room = $rooms.get(room)
+        if (!$room) {
+          const $room = this.newRoomView (room)
+          $rooms.set(room, $room)
+          return
+        }
         $room.timestamp = room.timestamp
         $room.status = room.status
         $room.message = room.message
@@ -353,7 +363,7 @@
       deleteRoom (roomId) {
         const { rooms, $rooms } = internal(this).state
         const room = rooms.get(roomId)
-        $rooms.remove(room)
+        $rooms.delete(room)
         rooms.delete(roomId)
       }
 
@@ -362,6 +372,7 @@
         $room.user = room.name
         $room.userId = room.userId
         $room.room = room.roomId
+        $room.message = room.message  || ''
         $room.timestamp = new Date().toISOString()
         return $room
       }
@@ -374,21 +385,20 @@
         const prevState = rooms
         const nextState = new Set(newRooms.map(room => room.roomId))
 
-        for (let prev of prevState.keys()) {
+        for (const prev of prevState.keys()) {
           if (!nextState.has(prev)) {
             const room = rooms.get(prev)
-            const $room = $rooms.get(room) 
-            // rooms.delete(prev)
+            const $room = $rooms.get(room)
             this.deleteRoom(prev)
-            onChangeFn && onChangeFn({type:'delete', room, $room})
+            onChangeFn && onChangeFn({ type: 'delete', room, roomView: $room })
           }
         }
 
-        for (let room of newRooms) {
+        for (const room of newRooms) {
           if (!prevState.has(room.roomId)) {
             // Set into collection.
             rooms.set(room.roomId, room)
-            onChangeFn && onChangeFn({type:'add', room })
+            onChangeFn && onChangeFn({ type: 'add', room })
           }
         }
       }
@@ -398,10 +408,10 @@
         const { conversations, rooms, socket, $rooms: $roomsView } = state
         const $rooms = this.shadowRoot.querySelector('.rooms')
 
-        this.onChangeRoomsState(newRooms, (({ type, room, $room }) => {
+        this.onChangeRoomsState(newRooms, ({ type, room, roomView }) => {
           switch (type) {
             case 'delete':
-              $rooms.remove($room)
+              $rooms.remove(roomView)
               break
             case 'add':
               const $room = this.newRoomView(room)
@@ -414,8 +424,8 @@
                 this.renderDialogs(conversations.get(state.room))
 
                 // Update room view.
-                this.updateRoom(prevRoom, {selected: false})
-                this.updateRoom(state.room, {selected: true})
+                this.updateRoom(prevRoom, { selected: false })
+                this.updateRoom(state.room, { selected: true })
               })
 
               $roomsView.set(room, $room)
@@ -429,7 +439,7 @@
               $rooms.appendChild($room)
               break
           }
-        }))
+        })
         // Select the first room as the main room for chatting.
         if (rooms.size) {
           const [room] = [...rooms.values()]
@@ -459,21 +469,21 @@
   }
 
   class Room {
-    constructor(roomId, userId, name) {
+    constructor (roomId, userId, name) {
       // From API.
       this.roomId = roomId
       this.userId = userId
       this.name = name
 
       // true=online, false=offline
-      this.status = false 
+      this.status = false
       this.timestamp = new Date()
       // message to display for the room.
       this.message = ''
       // state of the selected room for conversations.
       this.selected = false
     }
-  } 
+  }
 
   async function fetchRooms (user, token) {
     const response = await window.fetch('/rooms', {

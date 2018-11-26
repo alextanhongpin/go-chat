@@ -2,18 +2,18 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"log"
 	"net/http"
 	"os"
-	"regexp"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/alextanhongpin/go-chat/chat"
+	"github.com/alextanhongpin/go-chat/controller"
 	"github.com/alextanhongpin/go-chat/database"
 	"github.com/alextanhongpin/go-chat/entity"
-	"github.com/alextanhongpin/go-chat/repository"
 	"github.com/alextanhongpin/go-chat/ticket"
 
 	"github.com/go-redis/redis"
@@ -36,25 +36,50 @@ func main() {
 	}
 	defer db.Close()
 
-	ticketDispenser := ticket.NewDispenser([]byte(jwtSecret), jwtIssuer, 5*time.Minute)
+	signer := ticket.NewDispenser([]byte(jwtSecret), jwtIssuer, 5*time.Minute)
 
 	logger, _ := zap.NewProduction()
 	defer logger.Sync() // flushes buffer, if any
-	s := chat.New(db, NewRedis(), logger)
-	defer s.Close()
+
+	c := chat.New(db, NewRedis(), logger)
+	defer c.Close()
+
+	ctl := controller.New()
+	authorized := authMiddleware(signer)
 
 	mux := http.NewServeMux()
+	// Serve public files.
 	mux.Handle("/", http.FileServer(http.Dir("./public")))
 
-	mux.HandleFunc("/ws", s.ServeWS(ticketDispenser, db))
-	mux.HandleFunc("/auth", handleAuth(ticketDispenser, db))
-	mux.HandleFunc("/rooms", authMiddleware(ticketDispenser)(handleGetRooms(db)))
-	mux.HandleFunc("/conversations/", authMiddleware(ticketDispenser)(handleGetConversations(db)))
+	mux.HandleFunc("/ws", c.ServeWS(signer, db))
+	mux.HandleFunc("/auth", ctl.PostAuthorize(signer, db))
+	mux.HandleFunc("/rooms", authorized(ctl.GetRooms(db)))
+	mux.HandleFunc("/conversations/", authorized(ctl.GetConversations(db)))
 
-	log.Printf("listening to port *%s. press ctrl + c to cancel.\n", port)
-	log.Fatal(http.ListenAndServe(port, mux))
+	srv := &http.Server{
+		Addr:         port,
+		Handler:      mux,
+		WriteTimeout: 10 * time.Second,
+		ReadTimeout:  10 * time.Second,
+	}
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGKILL, syscall.SIGTERM, syscall.SIGQUIT)
+	go func() {
+		log.Printf("listening to port *%s. press ctrl + c to cancel.\n", port)
+		if err := srv.ListenAndServe(); err != http.ErrServerClosed {
+			log.Fatal(err)
+		}
+	}()
+	<-quit
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatal(err)
+	}
+	log.Println("gracefully shut down application")
 }
 
+// NewRedis returns a new redis.Client
 func NewRedis() *redis.Client {
 	client := redis.NewClient(&redis.Options{
 		Addr:     "localhost:6379",
@@ -70,7 +95,6 @@ type middleware func(http.HandlerFunc) http.HandlerFunc
 func authMiddleware(dispenser ticket.Dispenser) middleware {
 	return func(next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
-
 			auth := r.Header.Get("Authorization")
 			if values := strings.Split(auth, " "); len(values) != 2 {
 				http.Error(w, "missing authorization header", http.StatusUnauthorized)
@@ -94,102 +118,4 @@ func authMiddleware(dispenser ticket.Dispenser) middleware {
 			next.ServeHTTP(w, r)
 		}
 	}
-}
-
-func handleAuth(dispenser ticket.Dispenser, repo repository.User) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "invalid method", http.StatusMethodNotAllowed)
-			return
-		}
-
-		var req authRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		user, err := repo.GetUserByName(req.UserID)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		log.Printf("got user by name: %#v", user)
-
-		// Create new ticket.
-		ticket := dispenser.New(user.ID)
-
-		// Sign ticket.
-		token, err := dispenser.Sign(ticket)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		// Return as json response
-		json.NewEncoder(w).Encode(authResponse{
-			Token: token,
-		})
-	}
-}
-
-type authRequest struct {
-	UserID string `json:"user_id"`
-}
-
-type authResponse struct {
-	Token string `json:"token"`
-}
-
-func handleGetRooms(repo repository.Room) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-		userID, _ := ctx.Value(entity.ContextKeyUserID).(string)
-		if userID == "" {
-			http.Error(w, "invalid user id", http.StatusBadRequest)
-			return
-		}
-		rooms, err := repo.GetRooms(userID)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		json.NewEncoder(w).Encode(getRoomsResponse{
-			Data: rooms,
-		})
-	}
-}
-
-type getRoomsResponse struct {
-	Data []entity.UserRoom `json:"data"`
-}
-
-func handleGetConversations(repo repository.Conversation) http.HandlerFunc {
-	pattern := regexp.MustCompile(`^\/conversations\/([\w+])\/?$`)
-	log.Println("GET /conversations")
-	// res := r.FindStringSubmatch("/users/1")
-	return func(w http.ResponseWriter, r *http.Request) {
-		submatches := pattern.FindStringSubmatch(r.URL.Path)
-		log.Println("got submatches", submatches)
-		if submatches == nil {
-			http.Error(w, "room_id is required", http.StatusBadRequest)
-			return
-		}
-		roomID := submatches[1]
-		conversations, err := repo.GetConversations(roomID)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		json.NewEncoder(w).Encode(getConversationsResponse{
-			Data: conversations,
-			Room: roomID,
-		})
-	}
-}
-
-type getConversationsResponse struct {
-	Data []entity.Conversation `json:"data"`
-	Room string                `json:"room"`
 }
