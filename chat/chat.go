@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/alextanhongpin/go-chat/database"
+	"github.com/alextanhongpin/go-chat/pkg/token"
 	"github.com/alextanhongpin/go-chat/repository"
-	"github.com/alextanhongpin/go-chat/ticket"
 	"github.com/go-redis/redis"
 	"go.uber.org/zap"
 
@@ -215,7 +215,7 @@ func (c *Chat) Bind(uid UserID, sid SessionID) func() {
 	}
 }
 
-func (c *Chat) ServeWS(dispenser ticket.Dispenser, repo repository.User) http.HandlerFunc {
+func (c *Chat) ServeWS(signer token.Signer, repo repository.User) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// WebSocket is a httpGet only endpoint.
 		if r.Method != http.MethodGet {
@@ -234,7 +234,7 @@ func (c *Chat) ServeWS(dispenser ticket.Dispenser, repo repository.User) http.Ha
 		defer ws.Close()
 
 		token := r.URL.Query().Get("token")
-		userID, err := dispenser.Verify(token)
+		userID, err := signer.Verify(token)
 		if err != nil {
 			ws.WriteMessage(websocket.TextMessage,
 				websocket.FormatCloseMessage(websocket.CloseNormalClosure, "unauthorized"))

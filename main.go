@@ -14,7 +14,7 @@ import (
 	"github.com/alextanhongpin/go-chat/controller"
 	"github.com/alextanhongpin/go-chat/database"
 	"github.com/alextanhongpin/go-chat/entity"
-	"github.com/alextanhongpin/go-chat/ticket"
+	"github.com/alextanhongpin/go-chat/pkg/token"
 
 	"github.com/go-redis/redis"
 	"go.uber.org/zap"
@@ -36,7 +36,14 @@ func main() {
 	}
 	defer db.Close()
 
-	signer := ticket.NewDispenser([]byte(jwtSecret), jwtIssuer, 5*time.Minute)
+	signer := token.New(token.SignerOptions{
+		Now: func() time.Time {
+			return time.Now().UTC()
+		},
+		Issuer: jwtIssuer,
+		TTL:    5 * time.Minute,
+		Secret: []byte(jwtSecret),
+	})
 
 	logger, _ := zap.NewProduction()
 	defer logger.Sync() // flushes buffer, if any
@@ -90,13 +97,12 @@ func NewRedis() *redis.Client {
 		Password: "",
 		DB:       0,
 	})
-	// return &Cache{client: client}
 	return client
 }
 
 type middleware func(http.HandlerFunc) http.HandlerFunc
 
-func authMiddleware(dispenser ticket.Dispenser) middleware {
+func authMiddleware(signer token.Signer) middleware {
 	return func(next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			auth := r.Header.Get("Authorization")
@@ -109,7 +115,7 @@ func authMiddleware(dispenser ticket.Dispenser) middleware {
 					http.Error(w, "invalid bearer type", http.StatusUnauthorized)
 					return
 				}
-				userID, err := dispenser.Verify(token)
+				userID, err := signer.Verify(token)
 				if err != nil {
 					http.Error(w, err.Error(), http.StatusUnauthorized)
 					return
