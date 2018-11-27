@@ -11,6 +11,7 @@ import (
 type Signer interface {
 	Sign(id string) (string, error)
 	Verify(token string) (string, error)
+	ExpiresIn() int64
 }
 
 // SignerOptions represents the options for the SignerImpl.
@@ -29,6 +30,11 @@ type SignerImpl struct {
 // New returns a new Signer with the given options.
 func New(opts SignerOptions) *SignerImpl {
 	return &SignerImpl{opts}
+}
+
+// ExpiresIn returns the lifespan of the token in seconds.
+func (s *SignerImpl) ExpiresIn() int64 {
+	return int64(s.opts.TTL.Seconds())
 }
 
 // Sign signs the user as a subject and returns a token.

@@ -64,6 +64,7 @@ func (r *registerRequest) Validate() error {
 type registerResponse struct {
 	AccessToken string `json:"access_token"`
 }
+
 type registerService func(ctx context.Context, req registerRequest) (*registerResponse, error)
 
 func MakeRegisterService(repo repository.User, signer token.Signer) registerService {
@@ -88,6 +89,51 @@ func MakeRegisterService(repo repository.User, signer token.Signer) registerServ
 		}
 		return &registerResponse{
 			AccessToken: token,
+		}, nil
+	}
+}
+
+type loginRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+func (l *loginRequest) Validate() error {
+	if l.Email == "" {
+		return errors.New("email is required")
+	}
+	if l.Password == "" {
+		return errors.New("password is required")
+	}
+	return nil
+}
+
+type loginResponse struct {
+	AccessToken string `json:"access_token"`
+	ExpiresIn   int64  `json:"expires_in"`
+}
+
+type loginService func(ctx context.Context, req loginRequest) (*loginResponse, error)
+
+func MakeLoginService(repo repository.User, signer token.Signer) loginService {
+	return func(ctx context.Context, req loginRequest) (*loginResponse, error) {
+		if err := req.Validate(); err != nil {
+			return nil, err
+		}
+		user, err := repo.GetUserByEmail(req.Email)
+		if err != nil {
+			return nil, err
+		}
+		if err := user.ComparePassword(req.Password); err != nil {
+			return nil, err
+		}
+		accessToken, err := signer.Sign(user.ID)
+		if err != nil {
+			return nil, err
+		}
+		return &loginResponse{
+			AccessToken: accessToken,
+			ExpiresIn:   signer.ExpiresIn(),
 		}, nil
 	}
 }
