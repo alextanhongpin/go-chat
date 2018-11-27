@@ -1,27 +1,33 @@
 package controller
 
 import (
-	"encoding/json"
-	"net/http"
+	"context"
+	"errors"
 
 	"github.com/alextanhongpin/go-chat/entity"
 	"github.com/alextanhongpin/go-chat/repository"
 )
 
-func getRooms(repo repository.Room, w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	userID, _ := ctx.Value(entity.ContextKeyUserID).(string)
-	if userID == "" {
-		http.Error(w, "user id is required", http.StatusBadRequest)
-		return
-	}
+type getRoomsRequest struct {
+}
 
-	rooms, err := repo.GetRooms(userID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+type getRoomsResponse struct {
+	Data []entity.UserRoom `json:"data"`
+}
+
+type getRoomsService func(ctx context.Context, req getRoomsRequest) (*getRoomsResponse, error)
+
+func MakeGetRoomsService(repo repository.Room) getRoomsService {
+	return func(ctx context.Context, req getRoomsRequest) (*getRoomsResponse, error) {
+		userID, _ := ctx.Value(entity.ContextKeyUserID).(string)
+		if userID == "" {
+			return nil, errors.New("user_id is required")
+		}
+
+		rooms, err := repo.GetRooms(userID)
+		if err != nil {
+			return nil, err
+		}
+		return &getRoomsResponse{rooms}, nil
 	}
-	json.NewEncoder(w).Encode(M{
-		"data": rooms,
-	})
 }

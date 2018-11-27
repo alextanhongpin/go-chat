@@ -47,14 +47,18 @@ func main() {
 	ctl := controller.New()
 	authorized := authMiddleware(signer)
 
+	getRoomsService := controller.MakeGetRoomsService(db)
+	getConversationsService := controller.MakeGetConversationsService(db)
+	postAuthorizeService := controller.MakePostAuthorizeService(db, signer)
+
 	mux := http.NewServeMux()
 	// Serve public files.
 	mux.Handle("/", http.FileServer(http.Dir("./public")))
 
 	mux.HandleFunc("/ws", c.ServeWS(signer, db))
-	mux.HandleFunc("/auth", ctl.PostAuthorize(signer, db))
-	mux.HandleFunc("/rooms", authorized(ctl.GetRooms(db)))
-	mux.HandleFunc("/conversations/", authorized(ctl.GetConversations(db)))
+	mux.HandleFunc("/auth", ctl.PostAuthorize(postAuthorizeService))
+	mux.HandleFunc("/rooms", authorized(ctl.GetRooms(getRoomsService)))
+	mux.HandleFunc("/conversations/", authorized(ctl.GetConversations(getConversationsService)))
 
 	srv := &http.Server{
 		Addr:         port,

@@ -1,29 +1,31 @@
 package controller
 
 import (
-	"encoding/json"
-	"net/http"
-	"regexp"
+	"context"
 
+	"github.com/alextanhongpin/go-chat/entity"
 	"github.com/alextanhongpin/go-chat/repository"
 )
 
-var pattern = regexp.MustCompile(`^\/conversations\/([\w+])\/?$`)
+type getConversationsRequest struct {
+	RoomID string
+}
 
-func getConversations(repo repository.Conversation, w http.ResponseWriter, r *http.Request) {
-	submatches := pattern.FindStringSubmatch(r.URL.Path)
-	if submatches == nil {
-		http.Error(w, "room_id is required", http.StatusBadRequest)
-		return
+type getConversationsResponse struct {
+	Data []entity.Conversation `json:"data"`
+	Room string                `json:"room"`
+}
+type getConversationsService func(ctx context.Context, req getConversationsRequest) (*getConversationsResponse, error)
+
+func MakeGetConversationsService(repo repository.Conversation) getConversationsService {
+	return func(ctx context.Context, req getConversationsRequest) (*getConversationsResponse, error) {
+		conversations, err := repo.GetConversations(req.RoomID)
+		if err != nil {
+			return nil, err
+		}
+		return &getConversationsResponse{
+			Data: conversations,
+			Room: req.RoomID,
+		}, nil
 	}
-	roomID := submatches[1]
-	conversations, err := repo.GetConversations(roomID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	json.NewEncoder(w).Encode(M{
-		"data": conversations,
-		"room": roomID,
-	})
 }

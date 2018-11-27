@@ -1,8 +1,7 @@
 package controller
 
 import (
-	"encoding/json"
-	"net/http"
+	"context"
 
 	"github.com/alextanhongpin/go-chat/repository"
 	"github.com/alextanhongpin/go-chat/ticket"
@@ -16,36 +15,25 @@ type postAuthResponse struct {
 	Token string `json:"token"`
 }
 
-func postAuthorize(dispenser ticket.Dispenser, repo repository.User, w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "invalid method", http.StatusMethodNotAllowed)
-		return
+type postAuthorizeService func(ctx context.Context, req postAuthRequest) (*postAuthResponse, error)
+
+func MakePostAuthorizeService(repo repository.User, signer ticket.Dispenser) postAuthorizeService {
+	return func(ctx context.Context, req postAuthRequest) (*postAuthResponse, error) {
+		user, err := repo.GetUserByName(req.UserID)
+		if err != nil {
+			return nil, err
+		}
+
+		// Create new ticket.
+		ticket := signer.New(user.ID)
+
+		// Sign ticket.
+		token, err := signer.Sign(ticket)
+		if err != nil {
+			return nil, err
+		}
+		return &postAuthResponse{
+			Token: token,
+		}, nil
 	}
-
-	var req postAuthRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	user, err := repo.GetUserByName(req.UserID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	// Create new ticket.
-	ticket := dispenser.New(user.ID)
-
-	// Sign ticket.
-	token, err := dispenser.Sign(ticket)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	// Return as json response
-	json.NewEncoder(w).Encode(postAuthResponse{
-		Token: token,
-	})
 }
