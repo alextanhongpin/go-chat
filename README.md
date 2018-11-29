@@ -13,11 +13,14 @@
 - system should display count of unread messages
 - system should mark messages as read
 - system should allow only authenticated users to chat
+- system should allow users to login with multiple sessions
+- system should handle stickiness of the user's session
 
 **Non-functional requirements**
 
 - system should be reliable (messages should be stored)
 - system should be available (users should not be disconnected)
+- system should be secure (authentication)
 
 **Extended requirements**
 - system should handle validation on the messages sent to avoid spam
