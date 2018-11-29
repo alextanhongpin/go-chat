@@ -28,10 +28,6 @@ func (c *Controller) PostAuthorize(svc postAuthorizeService) http.HandlerFunc {
 		}
 
 		var req postAuthRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
 		res, err := svc(r.Context(), req)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -65,6 +61,48 @@ func (c *Controller) GetConversations(svc getConversationsService) http.HandlerF
 func (c *Controller) GetRooms(svc getRoomsService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		res, err := svc(r.Context(), getRoomsRequest{})
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		json.NewEncoder(w).Encode(res)
+	}
+}
+
+// PostLogin handles the user authentication request.
+func (c *Controller) PostLogin(svc loginService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "invalid method", http.StatusMethodNotAllowed)
+			return
+		}
+		var request loginRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		res, err := svc(r.Context(), request)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		json.NewEncoder(w).Encode(res)
+	}
+}
+
+// PostRegister handles the user registration request.
+func (c *Controller) PostRegister(svc registerService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "invalid method", http.StatusMethodNotAllowed)
+			return
+		}
+		var request registerRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		res, err := svc(r.Context(), request)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return

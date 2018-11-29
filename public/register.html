@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>Register</title>
+	</head>
+	<body>
+		<h1>Register</h1>
+
+		<div>
+			<label>Email</label>
+			<input type='email' name='email' id='email'/>
+
+			<label>Confirm Email</label>
+			<input type='email' name='confirm_email' id='confirm_email'/>
+
+			<label>Password</label>
+			<input type='password' name='password' id='password'/>
+
+			<label>Name</label>
+			<input type='text' name='name' id='name'/>
+
+			<button id='submit'>Submit</button>
+		</div>
+		<script>
+			'use strict';
+			(function () {
+
+				async function register({ email, confirmEmail, password, name }) {
+
+					const response = await window.fetch('/register', {
+						method: 'POST',
+						body: JSON.stringify({
+							email,
+							confirm_email: confirmEmail,
+							password,
+							name
+						})
+					})
+					if (!response.ok) {
+						const msg = await response.text()
+						console.error(msg)
+						return null
+					}
+					return response.json()
+				}
+
+				async function main() {
+					const accessToken = window.localStorage.access_token
+					if (accessToken) {
+						// TODO: Check if the token is valid.
+					}
+					const $emailInput = document.getElementById('email') 
+					const $passwordInput = document.getElementById('password')
+					const $confirmEmailInput = document.getElementById('confirm_email')
+					const $nameInput = document.getElementById('name')
+					const $submitButton = document.getElementById('submit')
+
+					$submitButton.addEventListener('click', async function () {
+
+						const request = {
+							name: $nameInput.value,
+							email: $emailInput.value,
+							confirmEmail: $confirmEmailInput.value,
+							password: $passwordInput.value
+						}
+
+						const response = await register(request)
+						window.localStorage.access_token = response.access_token
+						window.location.replace('/')
+
+					}, false)
+
+				}
+
+				main().catch(console.error)
+
+			})()
+		</script>
+	</body>
+</html>

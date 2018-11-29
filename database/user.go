@@ -48,7 +48,7 @@ func (c *Conn) GetUserByEmail(email string) (user entity.User, err error) {
 }
 
 func (c *Conn) CreateUser(user *entity.User) error {
-	result, err := c.db.Exec("INSERT INTO user (name, email, hashed_password) VALUES ($1, $1, $1)",
+	result, err := c.db.Exec("INSERT INTO user (name, email, hashed_password) VALUES (?, ?, ?)",
 		user.Name, user.Email, user.HashedPassword)
 	if err != nil {
 		return err

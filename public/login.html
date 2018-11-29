@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>Login</title>
+	</head>
+	<body>
+		<h1>Login</h1>
+
+		<div>
+			<label>Email</label>
+			<input type='email' name='email' id='email'/>
+
+			<label>Password</label>
+			<input type='password' name='password' id='password'/>
+
+			<button id='submit'>Submit</button>
+		</div>
+		<script>
+			'use strict';
+			(function () {
+
+				async function login({ email, confirmEmail, password, name }) {
+
+					const response = await window.fetch('/login', {
+						method: 'POST',
+						body: JSON.stringify({
+							email,
+							password
+						})
+					})
+					if (!response.ok) {
+						const msg = await response.text()
+						console.error(msg)
+						return null
+					}
+					return response.json()
+				}
+
+				async function main() {
+					const accessToken = window.localStorage.access_token
+					if (accessToken) {
+						// TODO: Check if the token is valid.
+					}
+					const $emailInput = document.getElementById('email') 
+					const $passwordInput = document.getElementById('password')
+					const $submitButton = document.getElementById('submit')
+
+					$submitButton.addEventListener('click', async function () {
+
+						const request = {
+							email: $emailInput.value,
+							password: $passwordInput.value
+						}
+
+						const response = await login(request)
+						window.localStorage.access_token = response.access_token
+						window.location.replace('/')
+
+					}, false)
+
+				}
+
+				main().catch(console.error)
+
+			})()
+		</script>
+	</body>
+</html>

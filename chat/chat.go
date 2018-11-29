@@ -234,6 +234,11 @@ func (c *Chat) ServeWS(signer token.Signer, repo repository.User) http.HandlerFu
 		defer ws.Close()
 
 		token := r.URL.Query().Get("token")
+		if token == "" {
+			ws.WriteMessage(websocket.TextMessage,
+				websocket.FormatCloseMessage(websocket.CloseNormalClosure, "token is required"))
+			return
+		}
 		userID, err := signer.Verify(token)
 		if err != nil {
 			ws.WriteMessage(websocket.TextMessage,
@@ -330,6 +335,7 @@ func (c *Chat) Join(uid UserID) {
 	}
 }
 
+// Leave clears the user's session from the room.
 func (c *Chat) Leave(uid UserID) {
 	logger := c.logger.With(zap.String("method", "Leave"),
 		zap.String("user", uid.String()))

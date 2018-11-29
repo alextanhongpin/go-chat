@@ -131,13 +131,15 @@
 
         // Ask for username for identification.
         // TODO: Remove this after replacing with login.
-        const user = window.prompt('enter username')
-        if (!user.trim().length) {
-          throw new Error('username is required')
-        }
-        state.user = user
+        // const user = window.prompt('enter username')
+        // if (!user.trim().length) {
+        //   throw new Error('username is required')
+        // }
+        // state.user = user
         // Handshake.
-        const token = await authenticate(user)
+        const token = window.localStorage.access_token
+        const user = await authenticate(token)
+        state.user = user 
 
         // Connect WebSocket.
         const socket = new window.WebSocket(`${socketUri}?token=${token}`)
@@ -455,17 +457,19 @@
 
   window.customElements.define('chat-app', ChatApp)
 
-  async function authenticate (user) {
+  async function authenticate (token) {
     const response = await window.fetch('/auth', {
       method: 'POST',
-      body: JSON.stringify({ user_id: user })
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
     })
     if (!response.ok) {
       console.error(await response.text())
       return
     }
-    const { token } = await response.json()
-    return token
+    const { name } = await response.json()
+    return name 
   }
 
   class Room {
@@ -498,6 +502,7 @@
       return []
     }
     const { data } = await response.json()
+    if (!data) return []
     return data.map(({ user_id, room_id, name }) => new Room(room_id, user_id, name))
   }
 

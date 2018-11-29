@@ -10,29 +10,25 @@ import (
 )
 
 type postAuthRequest struct {
-	UserID string `json:"user_id"`
+	// UserID string `json:"user_id"`
 }
 
 type postAuthResponse struct {
-	Token string `json:"token"`
+	// Token string `json:"token"`
+	Name string `json:"name"`
 }
 
 type postAuthorizeService func(ctx context.Context, req postAuthRequest) (*postAuthResponse, error)
 
-func MakePostAuthorizeService(repo repository.User, signer token.Signer) postAuthorizeService {
+func MakePostAuthorizeService(repo repository.User) postAuthorizeService {
 	return func(ctx context.Context, req postAuthRequest) (*postAuthResponse, error) {
-		user, err := repo.GetUserByName(req.UserID)
-		if err != nil {
-			return nil, err
-		}
-
-		// Sign the user.
-		token, err := signer.Sign(user.ID)
+		userID := ctx.Value(entity.ContextKeyUserID).(string)
+		user, err := repo.GetUser(userID)
 		if err != nil {
 			return nil, err
 		}
 		return &postAuthResponse{
-			Token: token,
+			Name: user.Name,
 		}, nil
 	}
 }
