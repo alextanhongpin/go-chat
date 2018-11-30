@@ -26,7 +26,6 @@ func (c *Controller) PostAuthorize(svc postAuthorizeService) http.HandlerFunc {
 			http.Error(w, "invalid method", http.StatusMethodNotAllowed)
 			return
 		}
-
 		var req postAuthRequest
 		res, err := svc(r.Context(), req)
 		if err != nil {
