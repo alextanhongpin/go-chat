@@ -75,27 +75,33 @@ func MakeHandleFriendService(repo repository.Friendship) HandleFriendService {
 	}
 }
 
-//
-// type ListFriendRequest struct {
-//         Filter entity.FilterFriendOption
-//         UserID string
-// }
-//
-// type ListFriendResponse struct {
-//         Friends []entity.Friend
-// }
-//
-// type ListFriendService func(ctx context.Context, req ListFriendRequest) (*ListFriendResponse, error)
-//
-// func MakeListFriendService(repo repository.Friendship) ListFriendService {
-//         return func(ctx context.Context, req ListFriendRequest) (*ListFriendResponse, error) {
-//
-//                 switch req.Filter {
-//                 case entity.FilterFriends:
-//                 case entity.FilterRequested:
-//                 case entity.FilterPending:
-//                 case entity.FilterBlocked:
-//                 }
-//                 return nil, nil
-//         }
-// }
+type ListFriendRequest struct {
+	Filter entity.FilterFriendOption
+	UserID int
+}
+
+type ListFriendResponse struct {
+	Friends []entity.Friend
+}
+
+type ListFriendService func(ctx context.Context, req ListFriendRequest) (*ListFriendResponse, error)
+
+func MakeListFriendService(repo repository.Friendship) ListFriendService {
+	return func(ctx context.Context, req ListFriendRequest) (*ListFriendResponse, error) {
+		var res []entity.Friend
+		var err error
+		switch req.Filter {
+		case entity.FilterFriends:
+			res, err = repo.GetFriends(req.UserID)
+		case entity.FilterRequested:
+			res, err = repo.GetRequested(req.UserID)
+		case entity.FilterPending:
+			res, err = repo.GetPending(req.UserID)
+		case entity.FilterBlocked:
+			res, err = repo.GetBlocked(req.UserID)
+		}
+		return &ListFriendResponse{
+			Friends: res,
+		}, err
+	}
+}

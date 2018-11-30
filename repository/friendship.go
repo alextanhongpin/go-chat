@@ -10,6 +10,6 @@ type Friendship interface {
 	Block(requestID int) error
 	GetRequested(id int) ([]entity.Friend, error)
 	GetPending(id int) ([]entity.Friend, error)
-	GetBlock(id int) ([]entity.Friend, error)
+	GetBlocked(id int) ([]entity.Friend, error)
 	GetFriends(id int) ([]entity.Friend, error)
 }
