@@ -9,6 +9,7 @@ import (
 	"github.com/alextanhongpin/go-chat/pkg/token"
 	"github.com/alextanhongpin/go-chat/repository"
 	"github.com/go-redis/redis"
+	"github.com/julienschmidt/httprouter"
 	"go.uber.org/zap"
 
 	"github.com/gorilla/websocket"
@@ -215,8 +216,8 @@ func (c *Chat) Bind(uid UserID, sid SessionID) func() {
 	}
 }
 
-func (c *Chat) ServeWS(signer token.Signer, repo repository.User) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+func (c *Chat) ServeWS(signer token.Signer, repo repository.User) httprouter.Handle {
+	return func(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 		// WebSocket is a httpGet only endpoint.
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

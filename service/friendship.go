@@ -9,8 +9,8 @@ import (
 )
 
 type AddFriendRequest struct {
-	UserID   int
-	TargetID int
+	UserID   int `json:"-"`
+	TargetID int `json:"-"`
 }
 
 func (a *AddFriendRequest) Validate() error {
@@ -28,12 +28,12 @@ func (a *AddFriendRequest) Sort() (l, r int) {
 }
 
 type AddFriendResponse struct {
-	Status bool
+	Status bool `json:"status"`
 }
 
-type AddFriendService func(ctx context.Context, req AddFriendRequest) (*AddFriendResponse, error)
+type AddFriend func(ctx context.Context, req AddFriendRequest) (*AddFriendResponse, error)
 
-func NewAddFriendService(repo repository.Friendship) AddFriendService {
+func NewAddFriendService(repo repository.Friendship) AddFriend {
 	return func(ctx context.Context, req AddFriendRequest) (*AddFriendResponse, error) {
 		if err := req.Validate(); err != nil {
 			return nil, err
@@ -49,27 +49,36 @@ func NewAddFriendService(repo repository.Friendship) AddFriendService {
 }
 
 type HandleFriendRequest struct {
-	RequestID int
-	UserID    int
-	Action    entity.FriendRequestAction
+	// RequestID int
+	UserID   int                        `json:"-"`
+	TargetID int                        `json:"-"`
+	Action   entity.FriendRequestAction `json:"action,omitempty"`
+}
+
+func (h *HandleFriendRequest) Sort() (int, int) {
+	if h.UserID > h.TargetID {
+		return h.TargetID, h.UserID
+	}
+	return h.UserID, h.TargetID
 }
 
 type HandleFriendResponse struct {
-	Status bool
+	Status bool `json:"status"`
 }
 
-type HandleFriendService func(ctx context.Context, req HandleFriendRequest) (*HandleFriendResponse, error)
+type HandleFriend func(ctx context.Context, req HandleFriendRequest) (*HandleFriendResponse, error)
 
-func NewHandleFriendService(repo repository.Friendship) HandleFriendService {
+func NewHandleFriendService(repo repository.Friendship) HandleFriend {
 	return func(ctx context.Context, req HandleFriendRequest) (*HandleFriendResponse, error) {
 		var err error
+		l, r := req.Sort()
 		switch req.Action {
 		case entity.AcceptFriend:
-			err = repo.AcceptFriend(req.RequestID)
+			err = repo.AcceptFriend(l, r)
 		case entity.BlockFriend:
-			err = repo.BlockFriend(req.RequestID)
+			err = repo.BlockFriend(l, r)
 		case entity.RejectFriend:
-			err = repo.RejectFriend(req.RequestID)
+			err = repo.RejectFriend(l, r)
 		}
 		return nil, err
 	}
@@ -84,9 +93,9 @@ type ListFriendResponse struct {
 	Friends []entity.Friend
 }
 
-type ListFriendService func(ctx context.Context, req ListFriendRequest) (*ListFriendResponse, error)
+type ListFriend func(ctx context.Context, req ListFriendRequest) (*ListFriendResponse, error)
 
-func NewListFriendService(repo repository.Friendship) ListFriendService {
+func NewListFriend(repo repository.Friendship) ListFriend {
 	return func(ctx context.Context, req ListFriendRequest) (*ListFriendResponse, error) {
 		var res []entity.Friend
 		var err error

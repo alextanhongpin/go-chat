@@ -6,6 +6,7 @@ import (
 	"regexp"
 
 	"github.com/alextanhongpin/go-chat/service"
+	"github.com/julienschmidt/httprouter"
 )
 
 // M represents a generic map.
@@ -22,12 +23,8 @@ func New() *Controller {
 }
 
 // PostAuthorize handles authorization for the user.
-func (c *Controller) PostAuthorize(svc service.Authorize) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "invalid method", http.StatusMethodNotAllowed)
-			return
-		}
+func (c *Controller) PostAuthorize(svc service.Authorize) httprouter.Handle {
+	return func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 		var req service.AuthorizeRequest
 		res, err := svc(r.Context(), req)
 		if err != nil {
@@ -40,16 +37,16 @@ func (c *Controller) PostAuthorize(svc service.Authorize) http.HandlerFunc {
 }
 
 // GetConversations returns a list of conversations.
-func (c *Controller) GetConversations(svc service.GetConversations) http.HandlerFunc {
+func (c *Controller) GetConversations(svc service.GetConversations) httprouter.Handle {
 	var pattern = regexp.MustCompile(`^\/conversations\/([\w+])\/?$`)
-	return func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 		submatches := pattern.FindStringSubmatch(r.URL.Path)
 		if submatches == nil {
 			http.Error(w, "room_id is required", http.StatusBadRequest)
 			return
 		}
 		roomID := submatches[1]
-		res, err := svc(r.Context(), service.GetConversationsRequest{roomID})
+		res, err := svc(r.Context(), service.GetConversationsRequest{RoomID: roomID})
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -59,8 +56,8 @@ func (c *Controller) GetConversations(svc service.GetConversations) http.Handler
 }
 
 // GetRooms endpoint returns a list of rooms.
-func (c *Controller) GetRooms(svc service.GetRooms) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+func (c *Controller) GetRooms(svc service.GetRooms) httprouter.Handle {
+	return func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 		res, err := svc(r.Context(), service.GetRoomsRequest{})
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -71,12 +68,8 @@ func (c *Controller) GetRooms(svc service.GetRooms) http.HandlerFunc {
 }
 
 // PostLogin handles the user authentication request.
-func (c *Controller) PostLogin(svc service.Login) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "invalid method", http.StatusMethodNotAllowed)
-			return
-		}
+func (c *Controller) PostLogin(svc service.Login) httprouter.Handle {
+	return func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 		var request service.LoginRequest
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -92,12 +85,8 @@ func (c *Controller) PostLogin(svc service.Login) http.HandlerFunc {
 }
 
 // PostRegister handles the user registration request.
-func (c *Controller) PostRegister(svc service.Register) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "invalid method", http.StatusMethodNotAllowed)
-			return
-		}
+func (c *Controller) PostRegister(svc service.Register) httprouter.Handle {
+	return func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 		var request service.RegisterRequest
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)

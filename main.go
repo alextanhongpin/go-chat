@@ -16,6 +16,7 @@ import (
 	"github.com/alextanhongpin/go-chat/entity"
 	"github.com/alextanhongpin/go-chat/pkg/token"
 	"github.com/alextanhongpin/go-chat/service"
+	"github.com/julienschmidt/httprouter"
 
 	"github.com/go-redis/redis"
 	"go.uber.org/zap"
@@ -42,7 +43,7 @@ func main() {
 			return time.Now().UTC()
 		},
 		Issuer: jwtIssuer,
-		TTL:    5 * time.Minute,
+		TTL:    1 * time.Hour,
 		Secret: []byte(jwtSecret),
 	})
 
@@ -60,21 +61,29 @@ func main() {
 	postAuthorizeService := service.NewAuthorizeService(db)
 	postLoginService := service.NewLoginService(db, signer)
 	postRegisterService := service.NewRegisterService(db, signer)
+	getUsersService := service.NewGetUsersService(db)
+	handleFriendService := service.NewHandleFriendService(db)
+	addFriendService := service.NewAddFriendService(db)
 
-	mux := http.NewServeMux()
+	router := httprouter.New()
+
 	// Serve public files.
-	mux.Handle("/", http.FileServer(http.Dir("./public")))
+	router.ServeFiles("/public/*filepath", http.Dir("./public"))
+	// router.GET("/", http.FileServer(http.Dir("./public")))
 
-	mux.HandleFunc("/ws", c.ServeWS(signer, db))
-	mux.HandleFunc("/auth", authorized(ctl.PostAuthorize(postAuthorizeService)))
-	mux.HandleFunc("/rooms", authorized(ctl.GetRooms(getRoomsService)))
-	mux.HandleFunc("/conversations/", authorized(ctl.GetConversations(getConversationsService)))
-	mux.HandleFunc("/register", ctl.PostRegister(postRegisterService))
-	mux.HandleFunc("/login", ctl.PostLogin(postLoginService))
+	router.GET("/ws", c.ServeWS(signer, db))
+	router.POST("/auth", authorized(ctl.PostAuthorize(postAuthorizeService)))
+	router.GET("/rooms", authorized(ctl.GetRooms(getRoomsService)))
+	router.GET("/conversations/", authorized(ctl.GetConversations(getConversationsService)))
+	router.POST("/register", ctl.PostRegister(postRegisterService))
+	router.POST("/login", ctl.PostLogin(postLoginService))
+	router.GET("/users", authorized(ctl.GetUsers(getUsersService)))
+	router.POST("/friends/:id", authorized(ctl.PostFriendship(addFriendService)))
+	router.PATCH("/friends/:id", authorized(ctl.PatchFriendship(handleFriendService)))
 
 	srv := &http.Server{
 		Addr:         port,
-		Handler:      mux,
+		Handler:      router,
 		WriteTimeout: 10 * time.Second,
 		ReadTimeout:  10 * time.Second,
 	}
@@ -105,11 +114,12 @@ func NewRedis() *redis.Client {
 	return client
 }
 
-type middleware func(http.HandlerFunc) http.HandlerFunc
+// type middleware func(http.HandlerFunc) http.HandlerFunc
+type middleware func(httprouter.Handle) httprouter.Handle
 
 func authMiddleware(signer token.Signer) middleware {
-	return func(next http.HandlerFunc) http.HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request) {
+	return func(next httprouter.Handle) httprouter.Handle {
+		return func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 			auth := r.Header.Get("Authorization")
 			if values := strings.Split(auth, " "); len(values) != 2 {
 				http.Error(w, "missing authorization header", http.StatusUnauthorized)
@@ -129,8 +139,7 @@ func authMiddleware(signer token.Signer) middleware {
 				ctx = context.WithValue(ctx, entity.ContextKeyUserID, userID)
 				r = r.WithContext(ctx)
 			}
-
-			next.ServeHTTP(w, r)
+			next(w, r, ps)
 		}
 	}
 }

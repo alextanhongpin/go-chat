@@ -8,4 +8,5 @@ type User interface {
 	GetUser(id string) (entity.User, error)
 	GetUserByName(name string) (entity.User, error)
 	GetUserByEmail(email string) (entity.User, error)
+	GetUsers(id int) ([]entity.Friend, error)
 }

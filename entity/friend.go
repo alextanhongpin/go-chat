@@ -9,7 +9,10 @@ var (
 )
 
 type Friend struct {
-	ID string
+	ID          string `json:"id"`
+	Status      string `json:"status,omitempty"`
+	Name        string `json:"name,omitempty"`
+	IsRequested bool   `json:"is_requested"`
 }
 
 type FilterFriendOption string

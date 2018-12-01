@@ -60,3 +60,33 @@ func (c *Conn) CreateUser(user *entity.User) error {
 	user.ID = strconv.FormatInt(id, 10)
 	return nil
 }
+
+func (c *Conn) GetUsers(id int) ([]entity.Friend, error) {
+	rows, err := c.db.Query(`
+		SELECT u.id, u.name, COALESCE(ref.type, ""), COALESCE(f.actor_id, "")
+		FROM user u 
+		LEFT JOIN friendship f 
+			ON u.id = f.user_id1 
+			OR u.id = f.user_id2 
+		LEFT JOIN ref_relationship ref
+			ON f.relationship = ref.id
+		WHERE u.id <> ?
+	`, id)
+
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []entity.Friend
+	for rows.Next() {
+		var actorID string
+		var user entity.Friend
+		if err := rows.Scan(&user.ID, &user.Name, &user.Status, &actorID); err != nil {
+			return nil, err
+		}
+		user.IsRequested = user.ID == actorID
+		result = append(result, user)
+	}
+	return result, rows.Err()
+}
