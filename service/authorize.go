@@ -1,4 +1,4 @@
-package controller
+package service
 
 import (
 	"context"
@@ -9,38 +9,38 @@ import (
 	"github.com/alextanhongpin/go-chat/repository"
 )
 
-type postAuthRequest struct {
+type AuthorizeRequest struct {
 	// UserID string `json:"user_id"`
 }
 
-type postAuthResponse struct {
+type AuthorizeResponse struct {
 	// Token string `json:"token"`
 	Name string `json:"name"`
 }
 
-type postAuthorizeService func(ctx context.Context, req postAuthRequest) (*postAuthResponse, error)
+type Authorize func(ctx context.Context, req AuthorizeRequest) (*AuthorizeResponse, error)
 
-func MakePostAuthorizeService(repo repository.User) postAuthorizeService {
-	return func(ctx context.Context, req postAuthRequest) (*postAuthResponse, error) {
+func NewAuthorizeService(repo repository.User) Authorize {
+	return func(ctx context.Context, req AuthorizeRequest) (*AuthorizeResponse, error) {
 		userID := ctx.Value(entity.ContextKeyUserID).(string)
 		user, err := repo.GetUser(userID)
 		if err != nil {
 			return nil, err
 		}
-		return &postAuthResponse{
+		return &AuthorizeResponse{
 			Name: user.Name,
 		}, nil
 	}
 }
 
-type registerRequest struct {
+type RegisterRequest struct {
 	Email        string `json:"email"`
 	ConfirmEmail string `json:"confirm_email"`
 	Password     string `json:"password"`
 	Name         string `json:"name"`
 }
 
-func (r *registerRequest) Validate() error {
+func (r *RegisterRequest) Validate() error {
 	if r.Email == "" {
 		return errors.New("email is required")
 	}
@@ -57,14 +57,14 @@ func (r *registerRequest) Validate() error {
 	return nil
 }
 
-type registerResponse struct {
+type RegisterResponse struct {
 	AccessToken string `json:"access_token"`
 }
 
-type registerService func(ctx context.Context, req registerRequest) (*registerResponse, error)
+type Register func(ctx context.Context, req RegisterRequest) (*RegisterResponse, error)
 
-func MakeRegisterService(repo repository.User, signer token.Signer) registerService {
-	return func(ctx context.Context, req registerRequest) (*registerResponse, error) {
+func NewRegisterService(repo repository.User, signer token.Signer) Register {
+	return func(ctx context.Context, req RegisterRequest) (*RegisterResponse, error) {
 		if err := req.Validate(); err != nil {
 			return nil, err
 		}
@@ -83,18 +83,18 @@ func MakeRegisterService(repo repository.User, signer token.Signer) registerServ
 		if err != nil {
 			return nil, err
 		}
-		return &registerResponse{
+		return &RegisterResponse{
 			AccessToken: token,
 		}, nil
 	}
 }
 
-type loginRequest struct {
+type LoginRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
 }
 
-func (l *loginRequest) Validate() error {
+func (l *LoginRequest) Validate() error {
 	if l.Email == "" {
 		return errors.New("email is required")
 	}
@@ -104,15 +104,15 @@ func (l *loginRequest) Validate() error {
 	return nil
 }
 
-type loginResponse struct {
+type LoginResponse struct {
 	AccessToken string `json:"access_token"`
 	ExpiresIn   int64  `json:"expires_in"`
 }
 
-type loginService func(ctx context.Context, req loginRequest) (*loginResponse, error)
+type Login func(ctx context.Context, req LoginRequest) (*LoginResponse, error)
 
-func MakeLoginService(repo repository.User, signer token.Signer) loginService {
-	return func(ctx context.Context, req loginRequest) (*loginResponse, error) {
+func NewLoginService(repo repository.User, signer token.Signer) Login {
+	return func(ctx context.Context, req LoginRequest) (*LoginResponse, error) {
 		if err := req.Validate(); err != nil {
 			return nil, err
 		}
@@ -127,7 +127,7 @@ func MakeLoginService(repo repository.User, signer token.Signer) loginService {
 		if err != nil {
 			return nil, err
 		}
-		return &loginResponse{
+		return &LoginResponse{
 			AccessToken: accessToken,
 			ExpiresIn:   signer.ExpiresIn(),
 		}, nil

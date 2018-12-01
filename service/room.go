@@ -1,4 +1,4 @@
-package controller
+package service
 
 import (
 	"context"
@@ -8,17 +8,17 @@ import (
 	"github.com/alextanhongpin/go-chat/repository"
 )
 
-type getRoomsRequest struct {
+type GetRoomsRequest struct {
 }
 
-type getRoomsResponse struct {
+type GetRoomsResponse struct {
 	Data []entity.UserRoom `json:"data"`
 }
 
-type getRoomsService func(ctx context.Context, req getRoomsRequest) (*getRoomsResponse, error)
+type GetRooms func(ctx context.Context, req GetRoomsRequest) (*GetRoomsResponse, error)
 
-func MakeGetRoomsService(repo repository.Room) getRoomsService {
-	return func(ctx context.Context, req getRoomsRequest) (*getRoomsResponse, error) {
+func NewGetRoomsService(repo repository.Room) GetRooms {
+	return func(ctx context.Context, req GetRoomsRequest) (*GetRoomsResponse, error) {
 		userID, _ := ctx.Value(entity.ContextKeyUserID).(string)
 		if userID == "" {
 			return nil, errors.New("user_id is required")
@@ -28,6 +28,6 @@ func MakeGetRoomsService(repo repository.Room) getRoomsService {
 		if err != nil {
 			return nil, err
 		}
-		return &getRoomsResponse{rooms}, nil
+		return &GetRoomsResponse{rooms}, nil
 	}
 }

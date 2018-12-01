@@ -33,14 +33,14 @@ type AddFriendResponse struct {
 
 type AddFriendService func(ctx context.Context, req AddFriendRequest) (*AddFriendResponse, error)
 
-func MakeAddFriendService(repo repository.Friendship) AddFriendService {
+func NewAddFriendService(repo repository.Friendship) AddFriendService {
 	return func(ctx context.Context, req AddFriendRequest) (*AddFriendResponse, error) {
 		if err := req.Validate(); err != nil {
 			return nil, err
 		}
 
 		l, r := req.Sort()
-		if err := repo.Add(l, r, l); err != nil {
+		if err := repo.AddFriend(l, r, l); err != nil {
 			return nil, err
 		}
 
@@ -60,16 +60,16 @@ type HandleFriendResponse struct {
 
 type HandleFriendService func(ctx context.Context, req HandleFriendRequest) (*HandleFriendResponse, error)
 
-func MakeHandleFriendService(repo repository.Friendship) HandleFriendService {
+func NewHandleFriendService(repo repository.Friendship) HandleFriendService {
 	return func(ctx context.Context, req HandleFriendRequest) (*HandleFriendResponse, error) {
 		var err error
 		switch req.Action {
 		case entity.AcceptFriend:
-			err = repo.Accept(req.RequestID)
+			err = repo.AcceptFriend(req.RequestID)
 		case entity.BlockFriend:
-			err = repo.Block(req.RequestID)
+			err = repo.BlockFriend(req.RequestID)
 		case entity.RejectFriend:
-			err = repo.Reject(req.RequestID)
+			err = repo.RejectFriend(req.RequestID)
 		}
 		return nil, err
 	}
@@ -86,19 +86,19 @@ type ListFriendResponse struct {
 
 type ListFriendService func(ctx context.Context, req ListFriendRequest) (*ListFriendResponse, error)
 
-func MakeListFriendService(repo repository.Friendship) ListFriendService {
+func NewListFriendService(repo repository.Friendship) ListFriendService {
 	return func(ctx context.Context, req ListFriendRequest) (*ListFriendResponse, error) {
 		var res []entity.Friend
 		var err error
 		switch req.Filter {
 		case entity.FilterFriends:
-			res, err = repo.GetFriends(req.UserID)
+			res, err = repo.GetMutualFriends(req.UserID)
 		case entity.FilterRequested:
-			res, err = repo.GetRequested(req.UserID)
+			res, err = repo.GetRequestedFriends(req.UserID)
 		case entity.FilterPending:
-			res, err = repo.GetPending(req.UserID)
+			res, err = repo.GetPendingFriends(req.UserID)
 		case entity.FilterBlocked:
-			res, err = repo.GetBlocked(req.UserID)
+			res, err = repo.GetBlockedFriends(req.UserID)
 		}
 		return &ListFriendResponse{
 			Friends: res,

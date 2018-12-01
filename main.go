@@ -15,6 +15,7 @@ import (
 	"github.com/alextanhongpin/go-chat/database"
 	"github.com/alextanhongpin/go-chat/entity"
 	"github.com/alextanhongpin/go-chat/pkg/token"
+	"github.com/alextanhongpin/go-chat/service"
 
 	"github.com/go-redis/redis"
 	"go.uber.org/zap"
@@ -54,11 +55,11 @@ func main() {
 	ctl := controller.New()
 	authorized := authMiddleware(signer)
 
-	getRoomsService := controller.MakeGetRoomsService(db)
-	getConversationsService := controller.MakeGetConversationsService(db)
-	postAuthorizeService := controller.MakePostAuthorizeService(db)
-	postLoginService := controller.MakeLoginService(db, signer)
-	postRegisterService := controller.MakeRegisterService(db, signer)
+	getRoomsService := service.NewGetRoomsService(db)
+	getConversationsService := service.NewGetConversationsService(db)
+	postAuthorizeService := service.NewAuthorizeService(db)
+	postLoginService := service.NewLoginService(db, signer)
+	postRegisterService := service.NewRegisterService(db, signer)
 
 	mux := http.NewServeMux()
 	// Serve public files.
