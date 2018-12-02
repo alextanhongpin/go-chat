@@ -69,3 +69,21 @@ func (c *Controller) PatchFriendship(svc service.HandleFriend) httprouter.Handle
 		json.NewEncoder(w).Encode(res)
 	}
 }
+
+func (c *Controller) GetContacts(svc service.GetContacts) httprouter.Handle {
+	return func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+		ctx := r.Context()
+		id, _ := ctx.Value(entity.ContextKeyUserID).(string)
+		userID, err := strconv.Atoi(id)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		res, err := svc(ctx, service.GetContactsRequest{UserID: userID})
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		json.NewEncoder(w).Encode(res)
+	}
+}

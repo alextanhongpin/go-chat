@@ -64,6 +64,8 @@ func main() {
 	getUsersService := service.NewGetUsersService(db)
 	handleFriendService := service.NewHandleFriendService(db)
 	addFriendService := service.NewAddFriendService(db)
+	getContactsService := service.NewGetContactsService(db)
+	postRoomsService := service.NewPostRoomsService(db)
 
 	router := httprouter.New()
 
@@ -73,13 +75,19 @@ func main() {
 
 	router.GET("/ws", c.ServeWS(signer, db))
 	router.POST("/auth", authorized(ctl.PostAuthorize(postAuthorizeService)))
+
 	router.GET("/rooms", authorized(ctl.GetRooms(getRoomsService)))
-	router.GET("/conversations/", authorized(ctl.GetConversations(getConversationsService)))
+	router.POST("/rooms", authorized(ctl.PostRooms(postRoomsService)))
+
+	router.GET("/conversations/:id", authorized(ctl.GetConversations(getConversationsService)))
 	router.POST("/register", ctl.PostRegister(postRegisterService))
 	router.POST("/login", ctl.PostLogin(postLoginService))
 	router.GET("/users", authorized(ctl.GetUsers(getUsersService)))
+
 	router.POST("/friends/:id", authorized(ctl.PostFriendship(addFriendService)))
 	router.PATCH("/friends/:id", authorized(ctl.PatchFriendship(handleFriendService)))
+
+	router.GET("/contacts", authorized(ctl.GetContacts(getContactsService)))
 
 	srv := &http.Server{
 		Addr:         port,

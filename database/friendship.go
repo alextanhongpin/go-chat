@@ -113,7 +113,7 @@ func (c *Conn) GetMutualFriends(id int) ([]entity.Friend, error) {
 	rows, err := c.db.Query(`
 		SELECT user_id2 AS id 
 		FROM friendship 
-		WHERE user_id1 = ? OR user_id2 = ?
+		WHERE (user_id1 = ? OR user_id2 = ?)
 		AND relationship = (SELECT id FROM ref_relationship WHERE type = 'friend') 
 	`, id, id)
 	if err != nil {
@@ -133,4 +133,38 @@ func (c *Conn) GetMutualFriends(id int) ([]entity.Friend, error) {
 		return nil, err
 	}
 	return result, nil
+}
+
+func (c *Conn) GetContacts(id int) ([]entity.Friend, error) {
+	rows, err := c.db.Query(`
+		SELECT u.id, u.name 
+		FROM user u 
+		INNER JOIN (SELECT CASE 
+			WHEN fr.user_id1 = 1 
+				THEN fr.user_id2 
+				ELSE fr.user_id1 
+			END AS id 
+		FROM friendship fr 
+		WHERE 
+			(fr.user_id1 = ? OR fr.user_id2 = ?) 
+			AND fr.relationship = (SELECT id FROM ref_relationship WHERE type = "friend")) r 
+		ON r.id = u.id
+	`, id, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []entity.Friend
+	for rows.Next() {
+		var friend entity.Friend
+		if err := rows.Scan(
+			&friend.ID,
+			&friend.Name,
+		); err != nil {
+			return nil, err
+		}
+		result = append(result, friend)
+	}
+	return result, rows.Err()
 }

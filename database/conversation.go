@@ -1,6 +1,10 @@
 package database
 
-import "github.com/alextanhongpin/go-chat/entity"
+import (
+	"database/sql"
+
+	"github.com/alextanhongpin/go-chat/entity"
+)
 
 func (c *Conn) CreateConversationReply(userID, roomID string, text string) (int64, error) {
 	stmt, err := c.db.Prepare("INSERT INTO conversation (user_id, room_id, text) VALUES (?, ?, ?)")
@@ -20,6 +24,9 @@ func (c *Conn) GetConversations(roomID string) ([]entity.Conversation, error) {
 		return nil, err
 	}
 	rows, err := stmt.Query(roomID)
+	if err == sql.ErrNoRows {
+		return []entity.Conversation{}, nil
+	}
 	if err != nil {
 		return nil, err
 	}

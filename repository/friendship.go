@@ -11,4 +11,7 @@ type Friendship interface {
 	GetPendingFriends(id int) ([]entity.Friend, error)
 	GetBlockedFriends(id int) ([]entity.Friend, error)
 	GetMutualFriends(id int) ([]entity.Friend, error)
+
+	// GetContacts returns basic information of users that are friends.
+	GetContacts(id int) ([]entity.Friend, error)
 }

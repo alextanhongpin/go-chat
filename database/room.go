@@ -5,29 +5,31 @@ import (
 )
 
 // CreateRoom create a new room.
-func (c *Conn) CreateRoom(users ...string) error {
+func (c *Conn) CreateRoom(users ...string) (int64, error) {
+	// TODO: Ensure that there are no duplicate rooms.
 	tx, err := c.db.Begin()
-
-	// Create a room where the conversation will happen.
-	res, err := tx.Exec("INSERT INTO room VALUES (NULL)")
 	if err != nil {
 		tx.Rollback()
-		return err
+		return -1, err
+	}
+	// Create a room where the conversation will happen.
+	res, err := tx.Exec("INSERT INTO room (id) VALUES (NULL)")
+	if err != nil {
+		return -1, err
 	}
 	roomID, err := res.LastInsertId()
 	if err != nil {
-		return err
+		return -1, err
 	}
-
 	// Create a many to many relationship between user and room, a junction table.
 	for _, userID := range users {
-		_, err := tx.Exec("INSERT INTO user_room (user_id, room_id) VALUES (?, ?)", roomID, userID)
+		_, err := tx.Exec("INSERT INTO user_room (user_id, room_id) VALUES (?, ?)", userID, roomID)
 		if err != nil {
 			tx.Rollback()
-			return err
+			return -1, err
 		}
 	}
-	return tx.Commit()
+	return roomID, tx.Commit()
 }
 
 // GetRoom returns the roomID for the given userID.

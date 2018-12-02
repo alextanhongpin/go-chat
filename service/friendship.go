@@ -114,3 +114,23 @@ func NewListFriend(repo repository.Friendship) ListFriend {
 		}, err
 	}
 }
+
+type GetContactsRequest struct {
+	UserID int
+}
+
+type GetContactsResponse struct {
+	Data []entity.Friend `json:"data,omitempty"`
+}
+
+type GetContacts func(ctx context.Context, req GetContactsRequest) (*GetContactsResponse, error)
+
+func NewGetContactsService(repo repository.Friendship) GetContacts {
+	return func(ctx context.Context, req GetContactsRequest) (*GetContactsResponse, error) {
+		res, err := repo.GetContacts(req.UserID)
+		if err != nil {
+			return nil, err
+		}
+		return &GetContactsResponse{Data: res}, nil
+	}
+}

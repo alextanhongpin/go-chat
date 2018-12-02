@@ -3,7 +3,6 @@ package controller
 import (
 	"encoding/json"
 	"net/http"
-	"regexp"
 
 	"github.com/alextanhongpin/go-chat/service"
 	"github.com/julienschmidt/httprouter"
@@ -38,27 +37,15 @@ func (c *Controller) PostAuthorize(svc service.Authorize) httprouter.Handle {
 
 // GetConversations returns a list of conversations.
 func (c *Controller) GetConversations(svc service.GetConversations) httprouter.Handle {
-	var pattern = regexp.MustCompile(`^\/conversations\/([\w+])\/?$`)
+	// var pattern = regexp.MustCompile(`^\/conversations\/([\w+])\/?$`)
 	return func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
-		submatches := pattern.FindStringSubmatch(r.URL.Path)
-		if submatches == nil {
-			http.Error(w, "room_id is required", http.StatusBadRequest)
-			return
-		}
-		roomID := submatches[1]
-		res, err := svc(r.Context(), service.GetConversationsRequest{RoomID: roomID})
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		json.NewEncoder(w).Encode(res)
-	}
-}
-
-// GetRooms endpoint returns a list of rooms.
-func (c *Controller) GetRooms(svc service.GetRooms) httprouter.Handle {
-	return func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
-		res, err := svc(r.Context(), service.GetRoomsRequest{})
+		// submatches := pattern.FindStringSubmatch(r.URL.Path)
+		// if submatches == nil {
+		//         http.Error(w, "room_id is required", http.StatusBadRequest)
+		//         return
+		// }
+		// roomID := submatches[1]
+		res, err := svc(r.Context(), service.GetConversationsRequest{RoomID: ps.ByName("id")})
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return

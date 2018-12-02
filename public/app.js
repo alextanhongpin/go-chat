@@ -50,13 +50,15 @@
 		
 		</style>
     <div class='app'>
+      <div id='user'></div>
+      <div class='contacts'></div>
       <div class='chat'>
         <div class='header'>
           chat 
         </div>
         <div class='rooms'></div>
         <div class='footer'>
-          <input class='search' type='text' placeholder='Search user'/>
+          <input id='contact-search' class='search' type='text' placeholder='Search user'/>
         </div>
       </div>
       <div>
@@ -115,7 +117,10 @@
           conversations: new Map(),
 
           // Timeouts for each room.
-          roomTimeouts: {}
+          roomTimeouts: {},
+
+          // Contacts list, searchable.
+          contacts: new Map()
         }
       }
 
@@ -139,7 +144,8 @@
         // Handshake.
         const token = window.localStorage.access_token
         const user = await authenticate(token)
-        state.user = user 
+        console.log('got user', user)
+        this.user = user
 
         // Connect WebSocket.
         const socket = new window.WebSocket(`${socketUri}?token=${token}`)
@@ -152,8 +158,14 @@
           // Request for the user id.
           send({ type: 'auth' })
 
+          // Fetch contacts.
+          const contacts = await fetchContacts(token)
+          for (let contact of contacts) {
+            state.contacts.set(contact.id, contact)
+          }
+
           // Fetch rooms for user.
-          const rooms = await fetchRooms(user, token)
+          const rooms = await fetchRooms(token)
           this.rooms = rooms
 
           // For each room, fetch the last 10 conversations.
@@ -244,7 +256,7 @@
                   }
                   conversations.push(newMessage)
                   if (isNew) {
-                    this.renderDialogs(conversations)
+                    this.renderDialogs(conversations || [])
                   }
                   // Update last message for the room.
                   this.updateRoom(msg.room, {
@@ -289,6 +301,15 @@
           state.isTypingInterval = window.setTimeout(() => {
             state.isTyping = false
           }, 1000)
+        })
+
+        this.shadowRoot.getElementById('contact-search').addEventListener('keyup', (evt) => {
+          const state = internal(this).state
+          const keyword = evt.currentTarget.value.trim().toLowerCase()
+          
+          const contacts = [...state.contacts.values()]
+          const result = contacts.filter((contact) => contact.name.toLowerCase().includes(keyword))
+          this.renderContacts(result)
         })
       }
 
@@ -339,8 +360,18 @@
         // Render the first conversation.
         if (conversations.size) {
           const data = conversations.get(room)
-          this.renderDialogs(data)
+          this.renderDialogs(data || [])
         }
+      }
+
+      set user(value) {
+        internal(this).state.user = value
+        this.renderUser()
+      }
+
+      renderUser() {
+        const text = `Hi, ${internal(this).state.user}`
+        this.shadowRoot.getElementById('user').innerHTML = text 
       }
 
       renderDialogs (conversations = []) {
@@ -359,6 +390,23 @@
           $dialog.message = conversation.text
           $dialogs.appendChild($dialog)
         })
+      }
+
+      renderContacts(contacts = []) {
+        const $contacts = this.shadowRoot.querySelector('.contacts')
+        $contacts.innerHTML = ''
+
+        for (let contact of contacts) {
+          const $contact = document.createElement('div')
+          $contact.textContent = contact.name
+          $contact.dataset.id = contact.id
+          $contact.addEventListener('click', async(evt) => {
+            const id = evt.currentTarget.dataset.id
+            const result = await postRoom(window.localStorage.access_token, id)
+            this.rooms = this.rooms.concat([result])
+          })
+          $contacts.appendChild($contact)
+        }
       }
 
       // Clears the room data, and the view associated with it.
@@ -405,6 +453,10 @@
         }
       }
 
+      get rooms() {
+        return [...internal(this).state.rooms.values()]
+      }
+
       set rooms (newRooms) {
         const state = internal(this).state
         const { conversations, rooms, socket, $rooms: $roomsView } = state
@@ -423,7 +475,7 @@
                 state.chattingWith = evt.detail.user()
 
                 // Render the conversations.
-                this.renderDialogs(conversations.get(state.room))
+                this.renderDialogs(conversations.get(state.room) || [])
 
                 // Update room view.
                 this.updateRoom(prevRoom, { selected: false })
@@ -489,7 +541,7 @@
     }
   }
 
-  async function fetchRooms (user, token) {
+  async function fetchRooms (token) {
     const response = await window.fetch('/rooms', {
       method: 'GET',
       headers: {
@@ -520,4 +572,41 @@
     }
     return response.json()
   }
+
+  async function fetchContacts(token) {
+    const response  = await window.fetch(`/contacts`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    })
+
+    if (!response.ok) {
+      const msg = await response.text()
+      console.error(msg)
+      return
+    }
+    const {data} = await response.json()
+    return data
+  }
+
+  async function postRoom(token, id) {
+    const response = await window.fetch('/rooms', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        friend_id: id
+      })
+    })
+    if (!response.ok) {
+      const msg = await response.text()
+      console.error(msg)
+      return null
+    }
+    const {data} = await response.json()
+    return data
+  }
+
 })()
