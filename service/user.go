@@ -23,7 +23,6 @@ func NewGetUsersService(repo repository.User) GetUsers {
 		if err != nil {
 			return nil, err
 		}
-
 		return &GetUsersResponse{users}, nil
 	}
 }

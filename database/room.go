@@ -1,8 +1,6 @@
 package database
 
 import (
-	"log"
-
 	"github.com/alextanhongpin/go-chat/entity"
 )
 
@@ -53,7 +51,6 @@ func (c *Conn) GetRoom(userID string) ([]string, error) {
 
 // GetRooms returns a list of user in the room.
 func (c *Conn) GetRooms(userID string) ([]entity.UserRoom, error) {
-	log.Println("getting rooms", userID)
 	stmt := `SELECT user_id, room_id, name FROM (SELECT user_id, room_id FROM user_room WHERE room_id IN (SELECT room_id FROM user_room WHERE user_id = ?) AND user_id <> ?) a INNER JOIN user b ON b.id = a.user_id`
 
 	rows, err := c.db.Query(stmt, userID, userID)

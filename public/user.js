@@ -7,6 +7,19 @@
         contain: content;
 			}	
 
+      #user-list {
+        border: 1px solid #EEEEEE;
+        padding: 10px;
+        min-width: 160px;
+        display: inline-block;
+      }
+
+      #name {
+        font-weight: bold;
+      }
+      #status {
+      }
+
 		</style>
     <div id='user-list'>
       <div id='name'></div>
@@ -36,21 +49,41 @@
         internal(this).state = {}
       }
       connectedCallback() {
-        this.shadowRoot.getElementById('submit').addEventListener('click', async() => {
-          if (!this.status) {
-            const result = await postFriendship({ 
-              action: this.status,
-              accessToken: window.localStorage.access_token,
-              friendId: this.id
-            })
-            console.log(result)
-            return
-          } else {
-            const result = await postFriendship({ 
-              accessToken: window.localStorage.access_token,
-              friendId: this.id
-            })
-            console.log(result)
+        this.shadowRoot.getElementById('submit').addEventListener('click', async(evt) => {
+
+          switch (evt.target.dataset.action) {
+            case 'add': {
+              const result = await postFriendship({ 
+                accessToken: window.localStorage.access_token,
+                friendId: this.id
+              })
+              this.isRequested = true
+              this.status = 'request'
+              console.log('add friend', evt.target.dataset.action)
+              return
+            }
+            case 'unfriend':
+            case 'cancel': {
+              const result = await patchFriendship({ 
+                action: 'reject',
+                accessToken: window.localStorage.access_token,
+                friendId: this.id
+              })
+              this.isRequested = false
+              this.status = ''
+              console.log('reject friend', evt.target.dataset.action)
+              return
+            }
+            case 'accept': {
+              const result = await patchFriendship({ 
+                action: 'accept',
+                accessToken: window.localStorage.access_token,
+                friendId: this.id
+              })
+              this.status = 'friend'
+              console.log('accept friend', evt.target.dataset.action)
+              return
+            }
           }
         })
       }
@@ -62,23 +95,36 @@
       }
       set name (value) {
         internal(this).state.name = value
-        this.renderName(value)
+        this.renderName()
       }
       get name () {
         return internal(this).state.name
       }
       set status(value) {
         internal(this).state.status = value
-        this.renderStatus(value)
+        this.renderStatus()
       }
       get status() {
         return internal(this).state.status
       }
-      renderName(name) {
-        this.shadowRoot.getElementById('name').innerHTML = name 
+      set isRequested (value) {
+        internal(this).state.isRequested = value
+        this.renderStatus()
       }
-      renderStatus(status) {
-        this.shadowRoot.getElementById('status').innerHTML = status
+      get isRequested () {
+        return internal(this).state.isRequested
+      }
+      renderName() {
+        this.shadowRoot.getElementById('name').innerHTML = this.name
+      }
+      renderStatus() {
+        const status = parseStatus(this.status, this.isRequested)
+        this.shadowRoot.getElementById('status').innerHTML = status 
+
+        const action = parseAction(this.status, this.isRequested)
+        const $submit = this.shadowRoot.getElementById('submit')
+        $submit.innerHTML = action 
+        $submit.dataset.action = action 
       }
       // attributeChangedCallback(attrName, oldValue, newValue) {
       //   switch (attrName) {
@@ -109,8 +155,8 @@
       console.error(await response.text())
       return null
     }
-    const { data } = await response.json()
-    return data
+    const { status } = await response.json()
+    return status 
   }
 
   async function postFriendship({accessToken, friendId}) {
@@ -125,7 +171,33 @@
       console.error(await response.text())
       return
     }
-    const {data} = await response.json()
-    return data
+    const {status} = await response.json()
+    return status 
   }
+
+  function parseStatus(status = '', isRequested = false) {
+    switch (status) {
+      case 'request':
+        return isRequested ? 'requested' : 'pending'
+      case 'friend': 
+      case 'block':
+        return status
+      default:
+        return 'not contact'
+    }
+  }
+
+  function parseAction(status = '', isRequested = false) {
+    switch (status) {
+      case 'request':
+        return isRequested ? 'cancel' : 'accept'
+      case 'friend':
+        return 'unfriend'
+      case 'block':
+        return 'unblock'
+      default:
+        return 'add'
+    }
+  }
+
 })()

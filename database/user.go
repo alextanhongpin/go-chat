@@ -63,15 +63,22 @@ func (c *Conn) CreateUser(user *entity.User) error {
 
 func (c *Conn) GetUsers(id int) ([]entity.Friend, error) {
 	rows, err := c.db.Query(`
-		SELECT u.id, u.name, COALESCE(ref.type, ""), COALESCE(f.actor_id, "")
+		SELECT 
+			u.id, 
+			u.name, 
+			COALESCE(ref.type, ""), 
+			COALESCE(fr.actor_id, "") 
 		FROM user u 
-		LEFT JOIN friendship f 
-			ON u.id = f.user_id1 
-			OR u.id = f.user_id2 
-		LEFT JOIN ref_relationship ref
-			ON f.relationship = ref.id
-		WHERE u.id <> ?
-	`, id)
+		LEFT JOIN (
+			SELECT * FROM friendship 
+			WHERE user_id1 = ? 
+			OR user_id2 = ?) fr 
+			ON fr.user_id1 = u.id 
+			OR fr.user_id2 = u.id 
+		LEFT JOIN ref_relationship ref 
+		ON ref.id = fr.relationship 
+		WHERE u.id <> ?;
+	`, id, id, id)
 
 	if err != nil {
 		return nil, err
@@ -85,7 +92,7 @@ func (c *Conn) GetUsers(id int) ([]entity.Friend, error) {
 		if err := rows.Scan(&user.ID, &user.Name, &user.Status, &actorID); err != nil {
 			return nil, err
 		}
-		user.IsRequested = user.ID == actorID
+		user.IsRequested = strconv.Itoa(id) == actorID
 		result = append(result, user)
 	}
 	return result, rows.Err()

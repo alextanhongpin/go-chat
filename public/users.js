@@ -52,7 +52,8 @@
               const $user = document.createElement('user-row')
               $user.id = user.id
               $user.name = user.name
-              $user.status = parseStatus(user.status, user.is_requested)
+              $user.status = user.status
+              $user.isRequested = user.is_requested
               $users.appendChild($user)
             }
       }
@@ -69,18 +70,6 @@
   })()
 
   window.customElements.define('user-list', UserList)
-
-  function parseStatus(status = '', isRequested = false) {
-    switch (status) {
-      case 'request':
-        return isRequested ? 'requested' : 'pending'
-      case 'friend': 
-      case 'block':
-        return status
-      default:
-        return 'not contact'
-    }
-  }
 
   async function fetchUsers(accessToken) {
     const response = await window.fetch('/users', {

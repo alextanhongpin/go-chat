@@ -40,7 +40,7 @@ func NewAddFriendService(repo repository.Friendship) AddFriend {
 		}
 
 		l, r := req.Sort()
-		if err := repo.AddFriend(l, r, l); err != nil {
+		if err := repo.AddFriend(l, r, req.UserID); err != nil {
 			return nil, err
 		}
 
@@ -80,7 +80,7 @@ func NewHandleFriendService(repo repository.Friendship) HandleFriend {
 		case entity.RejectFriend:
 			err = repo.RejectFriend(l, r)
 		}
-		return nil, err
+		return &HandleFriendResponse{Status: true}, err
 	}
 }
 
