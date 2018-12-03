@@ -66,7 +66,7 @@ func (c *Conn) GetUsers(id int) ([]entity.Friend, error) {
 		SELECT 
 			u.id, 
 			u.name, 
-			COALESCE(ref.type, ""), 
+			COALESCE(fr.relationship, ""), 
 			COALESCE(fr.actor_id, "") 
 		FROM user u 
 		LEFT JOIN (
@@ -75,8 +75,6 @@ func (c *Conn) GetUsers(id int) ([]entity.Friend, error) {
 			OR user_id2 = ?) fr 
 			ON fr.user_id1 = u.id 
 			OR fr.user_id2 = u.id 
-		LEFT JOIN ref_relationship ref 
-		ON ref.id = fr.relationship 
 		WHERE u.id <> ?;
 	`, id, id, id)
 

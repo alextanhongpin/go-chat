@@ -67,6 +67,12 @@ func main() {
 	getContactsService := service.NewGetContactsService(db)
 	postRoomsService := service.NewPostRoomsService(db)
 
+	getPostsService := service.NewGetPostsService(db)
+	getPostService := service.NewGetPostService(db)
+	createPostService := service.NewCreatePostService(db)
+	updatePostService := service.NewUpdatePostService(db)
+	deletePostService := service.NewDeletePostService(db)
+
 	router := httprouter.New()
 
 	// Serve public files.
@@ -89,6 +95,12 @@ func main() {
 
 	router.GET("/contacts", authorized(ctl.GetContacts(getContactsService)))
 
+	router.POST("/posts", authorized(ctl.PostPosts(createPostService)))
+	router.GET("/posts", authorized(ctl.GetPosts(getPostsService)))
+	router.GET("/posts/:id", authorized(ctl.GetPost(getPostService)))
+	router.PATCH("/posts/:id", authorized(ctl.UpdatePost(updatePostService)))
+	router.DELETE("/posts/:id", authorized(ctl.DeletePost(deletePostService)))
+
 	srv := &http.Server{
 		Addr:         port,
 		Handler:      router,
@@ -96,7 +108,11 @@ func main() {
 		ReadTimeout:  10 * time.Second,
 	}
 	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGKILL, syscall.SIGTERM, syscall.SIGQUIT)
+	signal.Notify(quit,
+		syscall.SIGINT,
+		syscall.SIGKILL,
+		syscall.SIGTERM,
+		syscall.SIGQUIT)
 	go func() {
 		log.Printf("listening to port *%s. press ctrl + c to cancel.\n", port)
 		if err := srv.ListenAndServe(); err != http.ErrServerClosed {

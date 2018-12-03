@@ -587,7 +587,7 @@
       return
     }
     const {data} = await response.json()
-    return data
+    return data || []
   }
 
   async function postRoom(token, id) {

@@ -4,7 +4,7 @@ import "github.com/alextanhongpin/go-chat/entity"
 
 func (c *Conn) AddFriend(userID, targetID, actorID int) error {
 	_, err := c.db.Exec(`
-	INSERT INTO friendship (user_id1, user_id2, actor_id, relationship) VALUES (?, ?, ?, (SELECT id FROM ref_relationship WHERE type = 'request'))`, userID, targetID, actorID)
+	INSERT INTO friendship (user_id1, user_id2, actor_id, relationship) VALUES (?, ?, ?, 'request')`, userID, targetID, actorID)
 	return err
 }
 
@@ -18,7 +18,7 @@ func (c *Conn) RejectFriend(a, b int) error {
 func (c *Conn) AcceptFriend(a, b int) error {
 	_, err := c.db.Exec(`
 	UPDATE friendship 
-	SET relationship = (SELECT id FROM ref_relationship WHERE type = 'friend') 
+	SET relationship = 'friend' 
 	WHERE user_id1 = ? AND user_id2 = ?
 	`, a, b)
 	return err
@@ -27,7 +27,7 @@ func (c *Conn) AcceptFriend(a, b int) error {
 func (c *Conn) BlockFriend(a, b int) error {
 	_, err := c.db.Exec(`
 	UPDATE friendship 
-	SET relationship = (SELECT id FROM ref_relationship WHERE type = 'block') 
+	SET relationship = 'block' 
 	WHERE user_id1 = ? AND user_id2 = ? 
 	`, a, b)
 	return err
@@ -38,7 +38,7 @@ func (c *Conn) GetRequestedFriends(id int) ([]entity.Friend, error) {
 		SELECT user_id2 AS id 
 		FROM friendship 
 		AND actor_id = ? 
-		AND relationship = (SELECT id FROM ref_relationship WHERE type = 'request') 
+		AND relationship = 'request' 
 	`, id)
 	if err != nil {
 		return nil, err
@@ -62,7 +62,7 @@ func (c *Conn) GetPendingFriends(id int) ([]entity.Friend, error) {
 		FROM friendship 
 		WHERE user_id1 = ? OR user_id2 = ? 
 		AND actor_id <> ?
-		AND relationship = (SELECT id FROM ref_relationship WHERE type = 'request') 
+		AND relationship = 'request' 
 	`, id, id, id)
 	if err != nil {
 		return nil, err
@@ -88,7 +88,7 @@ func (c *Conn) GetBlockedFriends(id int) ([]entity.Friend, error) {
 		SELECT user_id2 AS id 
 		FROM friendship 
 		AND actor_id = ?
-		AND relationship = (SELECT id FROM ref_relationship WHERE type = 'blocked') 
+		AND relationship = 'blocked' 
 	`, id)
 	if err != nil {
 		return nil, err
@@ -114,7 +114,7 @@ func (c *Conn) GetMutualFriends(id int) ([]entity.Friend, error) {
 		SELECT user_id2 AS id 
 		FROM friendship 
 		WHERE (user_id1 = ? OR user_id2 = ?)
-		AND relationship = (SELECT id FROM ref_relationship WHERE type = 'friend') 
+		AND relationship = 'friend' 
 	`, id, id)
 	if err != nil {
 		return nil, err
@@ -147,7 +147,7 @@ func (c *Conn) GetContacts(id int) ([]entity.Friend, error) {
 		FROM friendship fr 
 		WHERE 
 			(fr.user_id1 = ? OR fr.user_id2 = ?) 
-			AND fr.relationship = (SELECT id FROM ref_relationship WHERE type = "friend")) r 
+			AND fr.relationship = 'friend') r 
 		ON r.id = u.id
 	`, id, id)
 	if err != nil {
