@@ -1,7 +1,7 @@
 -- +goose Up
 -- SQL in this section is executed when the migration is applied.
 CREATE TABLE IF NOT EXISTS ref_relationship (
-	status varchar(255) PRIMARY KEY 
+	status varchar(32) PRIMARY KEY 
 );
 
 INSERT INTO ref_relationship (status) VALUES ('request');

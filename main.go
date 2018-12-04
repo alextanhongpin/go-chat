@@ -95,7 +95,7 @@ func main() {
 
 	router.GET("/contacts", authorized(ctl.GetContacts(getContactsService)))
 
-	router.POST("/posts", authorized(ctl.PostPosts(createPostService)))
+	router.POST("/posts", authorized(ctl.CreatePost(createPostService)))
 	router.GET("/posts", authorized(ctl.GetPosts(getPostsService)))
 	router.GET("/posts/:id", authorized(ctl.GetPost(getPostService)))
 	router.PATCH("/posts/:id", authorized(ctl.UpdatePost(updatePostService)))

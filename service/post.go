@@ -42,12 +42,12 @@ func NewGetPostService(repo repository.Post) GetPost {
 }
 
 type CreatePostRequest struct {
-	Text   string
-	UserID string
+	Text   string `json:"text"`
+	UserID string `json:"-"`
 }
 
 type CreatePostResponse struct {
-	Success bool
+	Success bool `json:"-"`
 }
 
 type CreatePost func(context.Context, CreatePostRequest) (*CreatePostResponse, error)

@@ -34,7 +34,7 @@ func (c *Controller) GetPost(svc service.GetPost) httprouter.Handle {
 func (c *Controller) CreatePost(svc service.CreatePost) httprouter.Handle {
 	return func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 		ctx := r.Context()
-		userID, _ := ctx.Value(entity.ContextKeyUserID)
+		userID, _ := ctx.Value(entity.ContextKeyUserID).(string)
 		var req service.CreatePostRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)

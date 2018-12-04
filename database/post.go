@@ -10,7 +10,7 @@ func (c *Conn) GetPosts() ([]entity.Post, error) {
 	rows, err := c.db.Query(`
 		SELECT id, text, created_at 
 		FROM post
-		WHERE deleted_at <> '1900-01-01 00:00:00'
+		WHERE deleted_at = '1900-01-01 00:00:00'
 	`)
 	if err != nil {
 		return nil, err
