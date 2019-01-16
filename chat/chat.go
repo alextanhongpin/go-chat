@@ -279,7 +279,8 @@ func (c *Chat) ServeWS(signer token.Signer, repo repository.User) httprouter.Han
 				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
 					log.Printf("error: %v, user-agent: %v", err, r.Header.Get("User-Agent"))
 				}
-				return
+				// Don't use return - it will not trigger the defer function.
+				break
 			}
 			// Every websocket connection is unique - we can safely
 			// inject the user id to the message.
@@ -301,7 +302,8 @@ func ping(ws *websocket.Conn) {
 		case <-ticker.C:
 			ws.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := ws.WriteMessage(websocket.PingMessage, []byte{}); err != nil {
-				return
+				// Don't use return, it will not trigger the defer function.
+				break
 			}
 		}
 	}
