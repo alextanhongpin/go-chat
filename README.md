@@ -309,6 +309,16 @@ To chat with a group
 2) the rest is the same as above
 
 
+## Redis
+
+We use Redis to store the nodes (backend server ) where the user is logged in to.
+
+When a user opens a chat, we want to track
+- which device they are on (each device is a different id)
+- which server they are on (the pub sub should best send to only the particular server the user is on)
+
+The naive approach is to just broadcast to all server listening to one namespace
+
 ## References
 - https://www.thepolyglotdeveloper.com/2016/12/create-real-time-chat-app-golang-angular-2-websockets/
 - https://devcenter.heroku.com/articles/go-websockets
