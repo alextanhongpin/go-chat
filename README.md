@@ -274,9 +274,40 @@ How do we go about creating the schema to store the chat groups, as well as chat
 
 
 Groups
+- user id: creator of the group
+- name: name of the group, default to names of the participant
+
+Group participants
+- group id (unique)
+- user id (unique)
+- blocked: null bool, whether they block the conversation or not
+
+
+Group participants private chat view
+- group by group id, only two person
+
+
+Group messages
 - user id
-- participants
-- blocks
+- text
+- type: text, media, photo, video, audio
+
+To view chats,
+
+1) list the available chat groups if exists
+2) otherwise, list your friends
+
+To chat with someone (private)
+
+1) select the person to chat with
+2) check if there exists a group with the individuals
+3) create group if not exists, add participants
+4) send message to the group, but exclude yourself
+
+To chat with a group
+1) select the list of person to add to the group
+2) the rest is the same as above
+
 
 ## References
 - https://www.thepolyglotdeveloper.com/2016/12/create-real-time-chat-app-golang-angular-2-websockets/
