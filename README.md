@@ -1,5 +1,9 @@
 # go-chat
 
+See the improvised version [here](https://github.com/alextanhongpin/go-chat.v2).
+
+
+
 ## Requirements
 
 **Functional requirements:**
@@ -259,6 +263,20 @@ The status of the user should be stored in a distributed cache like redis, so th
 - There are several ways to perform authentication, one is to use good ol' cookie, another is to use a ticker server.
 - Checkout Server Side Events for read-only events 
 
+## database design
+
+How do we go about creating the schema to store the chat groups, as well as chat messages?
+
+- create private chat
+- create chat with groups
+- store chat messages
+- block chat request
+
+
+Groups
+- user id
+- participants
+- blocks
 
 ## References
 - https://www.thepolyglotdeveloper.com/2016/12/create-real-time-chat-app-golang-angular-2-websockets/
